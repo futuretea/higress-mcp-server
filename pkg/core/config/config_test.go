@@ -28,6 +28,19 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigUsesHigressConsoleEnvironmentVariables(t *testing.T) {
+	t.Setenv("MCP_CONSOLE_URL", "https://old.example")
+	t.Setenv("MCP_HIGRESS_CONSOLE_URL", "https://higress.example")
+
+	cfg, err := config.LoadConfig("", viper.New())
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ConsoleURL != "https://higress.example" {
+		t.Fatalf("ConsoleURL = %q, want %q", cfg.ConsoleURL, "https://higress.example")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string

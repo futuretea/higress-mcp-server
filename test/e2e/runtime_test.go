@@ -107,9 +107,9 @@ func startMCPServer(t *testing.T, ctx context.Context, binary, consoleURL, usern
 	command.Stdout = output
 	command.Stderr = output
 	command.Env = withEnvironment(os.Environ(), map[string]string{
-		"MCP_CONSOLE_URL":      consoleURL,
-		"MCP_CONSOLE_USERNAME": username,
-		"MCP_CONSOLE_PASSWORD": password,
+		"MCP_HIGRESS_CONSOLE_URL":      consoleURL,
+		"MCP_HIGRESS_CONSOLE_USERNAME": username,
+		"MCP_HIGRESS_CONSOLE_PASSWORD": password,
 	})
 	if err := command.Start(); err != nil {
 		cancel()

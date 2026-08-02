@@ -96,9 +96,26 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 		}
 	}
 
-	v.SetEnvPrefix("MCP")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	v.AutomaticEnv()
+	envBindings := map[string]string{
+		"port":                    "MCP_PORT",
+		"listen":                  "MCP_LISTEN",
+		"sse_base_url":            "MCP_SSE_BASE_URL",
+		"log_level":               "MCP_LOG_LEVEL",
+		"console_url":             "MCP_HIGRESS_CONSOLE_URL",
+		"console_username":        "MCP_HIGRESS_CONSOLE_USERNAME",
+		"console_password":        "MCP_HIGRESS_CONSOLE_PASSWORD",
+		"console_auth_mode":       "MCP_HIGRESS_CONSOLE_AUTH_MODE",
+		"console_timeout_seconds": "MCP_HIGRESS_CONSOLE_TIMEOUT_SECONDS",
+		"enabled_tools":           "MCP_ENABLED_TOOLS",
+		"disabled_tools":          "MCP_DISABLED_TOOLS",
+		"enabled_domains":         "MCP_ENABLED_DOMAINS",
+		"disabled_domains":        "MCP_DISABLED_DOMAINS",
+	}
+	for key, variable := range envBindings {
+		if err := v.BindEnv(key, variable); err != nil {
+			return nil, fmt.Errorf("bind environment variable %s: %w", variable, err)
+		}
+	}
 
 	cfg := &StaticConfig{}
 	if err := v.Unmarshal(cfg); err != nil {

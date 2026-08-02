@@ -29,7 +29,7 @@ Higress Console 通常使用 `8080` 端口，MCP 服务请使用其他端口：
 ```bash
 make build
 
-MCP_CONSOLE_URL=http://127.0.0.1:8080 \
+MCP_HIGRESS_CONSOLE_URL=http://127.0.0.1:8080 \
 ./bin/higress-mcp-server mcp --port 8081 --listen 0.0.0.0
 ```
 
@@ -40,9 +40,9 @@ Streamable HTTP 端点不需要认证。
 Console 自身的管理 API 通常需要认证，这与 MCP HTTP 入口相互独立：
 
 ```bash
-export MCP_CONSOLE_USERNAME=admin
-export MCP_CONSOLE_PASSWORD='<console-password>'
-export MCP_CONSOLE_AUTH_MODE=session  # session（默认）或 basic
+export MCP_HIGRESS_CONSOLE_USERNAME=admin
+export MCP_HIGRESS_CONSOLE_PASSWORD='<console-password>'
+export MCP_HIGRESS_CONSOLE_AUTH_MODE=session  # session（默认）或 basic
 ```
 
 `session` 会登录一次并保留 Console Cookie；`basic` 则在每次请求中向已配置的
@@ -55,11 +55,11 @@ Console 地址发送 HTTP Basic 认证。仅当目标 Console 明确允许匿名
 
 | 设置 | 参数 | 环境变量 | 默认值 |
 | --- | --- | --- | --- |
-| Console 地址 | `--console-url` | `MCP_CONSOLE_URL` | `http://127.0.0.1:8080` |
-| Console 认证方式 | `--console-auth-mode` | `MCP_CONSOLE_AUTH_MODE` | `session` |
-| Console 超时秒数 | `--console-timeout-seconds` | `MCP_CONSOLE_TIMEOUT_SECONDS` | `30` |
-| Console 用户名 | — | `MCP_CONSOLE_USERNAME` | 未设置 |
-| Console 密码 | — | `MCP_CONSOLE_PASSWORD` | 未设置 |
+| Console 地址 | `--console-url` | `MCP_HIGRESS_CONSOLE_URL` | `http://127.0.0.1:8080` |
+| Console 认证方式 | `--console-auth-mode` | `MCP_HIGRESS_CONSOLE_AUTH_MODE` | `session` |
+| Console 超时秒数 | `--console-timeout-seconds` | `MCP_HIGRESS_CONSOLE_TIMEOUT_SECONDS` | `30` |
+| Console 用户名 | — | `MCP_HIGRESS_CONSOLE_USERNAME` | 未设置 |
+| Console 密码 | — | `MCP_HIGRESS_CONSOLE_PASSWORD` | 未设置 |
 | MCP HTTP 端口 | `mcp --port` | `MCP_PORT` | `0`（stdio） |
 | MCP 监听地址 | `mcp --listen` | `MCP_LISTEN` | `127.0.0.1` |
 

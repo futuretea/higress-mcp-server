@@ -39,7 +39,7 @@ this MCP server:
 ```bash
 make build
 
-MCP_CONSOLE_URL=http://127.0.0.1:8080 \
+MCP_HIGRESS_CONSOLE_URL=http://127.0.0.1:8080 \
 ./bin/higress-mcp-server mcp --port 8081 --listen 0.0.0.0
 ```
 
@@ -51,9 +51,9 @@ The target Console normally authenticates its management APIs. Configure this
 separately from the MCP endpoint:
 
 ```bash
-export MCP_CONSOLE_USERNAME=admin
-export MCP_CONSOLE_PASSWORD='<console-password>'
-export MCP_CONSOLE_AUTH_MODE=session  # session (default) or basic
+export MCP_HIGRESS_CONSOLE_USERNAME=admin
+export MCP_HIGRESS_CONSOLE_PASSWORD='<console-password>'
+export MCP_HIGRESS_CONSOLE_AUTH_MODE=session  # session (default) or basic
 ```
 
 `session` logs in once and retains the Console cookie. `basic` sends HTTP Basic
@@ -67,11 +67,11 @@ Configuration precedence is flags, environment variables, YAML, then defaults.
 
 | Setting | Flag | Environment variable | Default |
 | --- | --- | --- | --- |
-| Console base URL | `--console-url` | `MCP_CONSOLE_URL` | `http://127.0.0.1:8080` |
-| Console auth mode | `--console-auth-mode` | `MCP_CONSOLE_AUTH_MODE` | `session` |
-| Console timeout | `--console-timeout-seconds` | `MCP_CONSOLE_TIMEOUT_SECONDS` | `30` |
-| Console username | — | `MCP_CONSOLE_USERNAME` | unset |
-| Console password | — | `MCP_CONSOLE_PASSWORD` | unset |
+| Console base URL | `--console-url` | `MCP_HIGRESS_CONSOLE_URL` | `http://127.0.0.1:8080` |
+| Console auth mode | `--console-auth-mode` | `MCP_HIGRESS_CONSOLE_AUTH_MODE` | `session` |
+| Console timeout | `--console-timeout-seconds` | `MCP_HIGRESS_CONSOLE_TIMEOUT_SECONDS` | `30` |
+| Console username | — | `MCP_HIGRESS_CONSOLE_USERNAME` | unset |
+| Console password | — | `MCP_HIGRESS_CONSOLE_PASSWORD` | unset |
 | MCP HTTP port | `mcp --port` | `MCP_PORT` | `0` (stdio) |
 | MCP listen host | `mcp --listen` | `MCP_LISTEN` | `127.0.0.1` |
 
