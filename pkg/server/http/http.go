@@ -12,8 +12,8 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/server"
 	"github.com/rs/zerolog/log"
 
-	"example.invalid/mcp-template-module-placeholder/pkg/core/config"
-	mcpserver "example.invalid/mcp-template-module-placeholder/pkg/server/mcp"
+	"github.com/futuretea/higress-mcp-server/pkg/core/config"
+	mcpserver "github.com/futuretea/higress-mcp-server/pkg/server/mcp"
 )
 
 const (
@@ -21,6 +21,7 @@ const (
 	MCPEndpoint        = "/mcp"
 	SSEEndpoint        = "/sse"
 	SSEMessageEndpoint = "/message"
+	maxMCPRequestBytes = 8 << 20
 )
 
 const (
@@ -151,8 +152,8 @@ func NewHandler(mcpServer *mcpserver.Server, httpServer *http.Server, sseBaseURL
 	}
 
 	mux.Handle(SSEEndpoint, sseServer.SSEHandler())
-	mux.Handle(SSEMessageEndpoint, sseServer.MessageHandler())
-	mux.Handle(MCPEndpoint, handler.withShutdownContext(streamableHTTPServer))
+	mux.Handle(SSEMessageEndpoint, limitRequestBody(sseServer.MessageHandler()))
+	mux.Handle(MCPEndpoint, limitRequestBody(handler.withShutdownContext(streamableHTTPServer)))
 	mux.HandleFunc(HealthEndpoint, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.WriteHeader(http.StatusMethodNotAllowed)

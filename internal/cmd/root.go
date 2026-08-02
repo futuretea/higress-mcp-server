@@ -7,11 +7,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"example.invalid/mcp-template-module-placeholder/internal/toolcatalog"
-	"example.invalid/mcp-template-module-placeholder/pkg/core/config"
-	"example.invalid/mcp-template-module-placeholder/pkg/core/version"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset/example"
+	"github.com/futuretea/higress-mcp-server/internal/toolcatalog"
+	"github.com/futuretea/higress-mcp-server/pkg/console"
+	"github.com/futuretea/higress-mcp-server/pkg/core/config"
+	"github.com/futuretea/higress-mcp-server/pkg/core/version"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset/higress"
 )
 
 // IOStreams groups the streams used by the CLI.
@@ -28,7 +29,7 @@ func NewRootCommand(streams IOStreams) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:           version.BinaryName,
-		Short:         "MCP server template CLI and Model Context Protocol server",
+		Short:         "Higress Console MCP server and command-line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -48,6 +49,9 @@ func NewRootCommand(streams IOStreams) *cobra.Command {
 func addCommonFlags(command *cobra.Command, cfgFile *string) {
 	flags := command.PersistentFlags()
 	flags.StringVar(cfgFile, "config", "", "config file path (YAML)")
+	flags.String("console-url", "http://127.0.0.1:8080", "Higress Console base URL")
+	flags.String("console-auth-mode", "session", "Console authentication mode: session or basic")
+	flags.Int("console-timeout-seconds", 30, "Console request timeout in seconds")
 	flags.StringSlice("enabled-tools", []string{}, "comma-separated list of tool names to enable")
 	flags.StringSlice("disabled-tools", []string{}, "comma-separated list of tool names to disable")
 	flags.StringSlice("enable-domains", []string{}, "comma-separated list of tool domains to enable")
@@ -57,10 +61,13 @@ func addCommonFlags(command *cobra.Command, cfgFile *string) {
 func bindCommonFlags(v *viper.Viper, cmd *cobra.Command) error {
 	flags := cmd.Root().PersistentFlags()
 	bindings := map[string]string{
-		"enabled_tools":    "enabled-tools",
-		"disabled_tools":   "disabled-tools",
-		"enabled_domains":  "enable-domains",
-		"disabled_domains": "disable-domains",
+		"console_url":             "console-url",
+		"console_auth_mode":       "console-auth-mode",
+		"console_timeout_seconds": "console-timeout-seconds",
+		"enabled_tools":           "enabled-tools",
+		"disabled_tools":          "disabled-tools",
+		"enabled_domains":         "enable-domains",
+		"disabled_domains":        "disable-domains",
 	}
 	for key, flag := range bindings {
 		if err := v.BindPFlag(key, flags.Lookup(flag)); err != nil {
@@ -81,12 +88,33 @@ func loadCLIConfig(cmd *cobra.Command, cfgFile string, v *viper.Viper) (*config.
 	return cfg, nil
 }
 
-func defaultToolsets() []toolset.Toolset {
-	return []toolset.Toolset{&example.Toolset{}}
+func defaultToolsets(cfg *config.StaticConfig) ([]toolset.Toolset, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("static config is required")
+	}
+	client, err := console.NewClient(console.Config{
+		BaseURL:        cfg.ConsoleURL,
+		Username:       cfg.ConsoleUsername,
+		Password:       cfg.ConsolePassword,
+		AuthMode:       cfg.ConsoleAuthMode,
+		TimeoutSeconds: cfg.ConsoleTimeoutSeconds,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create Console client: %w", err)
+	}
+	consoleToolset, err := higress.New(client)
+	if err != nil {
+		return nil, fmt.Errorf("create Higress toolset: %w", err)
+	}
+	return []toolset.Toolset{consoleToolset}, nil
 }
 
 func buildToolCatalog(cfg *config.StaticConfig) ([]toolset.ServerTool, error) {
-	return toolcatalog.Build(defaultToolsets(), toolset.FilterOptions{
+	toolsets, err := defaultToolsets(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return toolcatalog.Build(toolsets, toolset.FilterOptions{
 		EnabledTools:    cfg.EnabledTools,
 		DisabledTools:   cfg.DisabledTools,
 		EnabledDomains:  cfg.EnabledDomains,

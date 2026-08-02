@@ -56,8 +56,6 @@ jobs:
           cache: true
       - name: Run tests
         run: go test -race ./...
-      - name: Verify template initialization
-        run: make test-template-init
 
   build:
     name: Build on ${{ matrix.os }}

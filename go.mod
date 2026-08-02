@@ -1,6 +1,6 @@
-module example.invalid/mcp-template-module-placeholder
+module github.com/futuretea/higress-mcp-server
 
-go 1.25.10
+go 1.25.12
 
 require (
 	github.com/mark3labs/mcp-go v0.55.1

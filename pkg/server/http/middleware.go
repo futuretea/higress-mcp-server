@@ -2,6 +2,7 @@ package http
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +12,34 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+func limitRequestBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Body == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.ContentLength > maxMCPRequestBytes {
+			_ = r.Body.Close()
+			http.Error(w, "MCP request body exceeds 8 MiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxMCPRequestBytes+1))
+		_ = r.Body.Close()
+		if err != nil {
+			http.Error(w, "read MCP request body", http.StatusBadRequest)
+			return
+		}
+		if int64(len(body)) > maxMCPRequestBytes {
+			http.Error(w, "MCP request body exceeds 8 MiB", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ContentLength = int64(len(body))
+		next.ServeHTTP(w, r)
+	})
+}
 
 // RequestMiddleware logs HTTP requests without query strings.
 func RequestMiddleware(next http.Handler) http.Handler {

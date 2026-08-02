@@ -1,211 +1,122 @@
-# MCP Server Template
+# Higress Console MCP Server
 
 [English](README.md)
 
-可 clone 的最小 MCP（Model Context Protocol）server 骨架。同一二进制同时提供给 AI 助手用的 **MCP server**，以及给人用的小型 **CLI**。内置示例工具 `echo` / `ping`。
+这是连接 Higress Console 管理 API 的 MCP（Model Context Protocol）服务。它以
+Streamable HTTP 为主要使用方式，同时保留 stdio 和 SSE，方便本地客户端接入。
+MCP 的 HTTP 入口按需求不做内建认证；仅应部署在可信网络中，若需要公网暴露，请由
+外部反向代理负责访问控制。
 
-## 初始化派生仓库
+## 能力范围
 
-从此模板创建仓库后，先替换明确的占位符，再开始构建：
+服务提供常用资源的易用工具：路由、域名、服务来源、消费者、代理服务器、TLS
+证书、Wasm 插件与其全局/路由/域名/服务实例，以及 AI 路由和 LLM Provider。
+
+`higress_console_request` 是完整 API 的通用入口，可访问配置的 Console 上所有
+管理路径，包括 system、dashboard、user、MCP Server、AI Proxy 与 Grafana。它拒绝
+带主机、查询串或路径穿越的输入，也会拒绝离开已配置 Console base URL（含路径前缀）的
+重定向，因此不能被用作转发到其他主机或应用的代理。可先调用
+`higress_console_capabilities` 查看常用资源名称和稳定 API 分组。
+
+实现已对照 Higress Console `v2.1.11` 与 `v2.2.3`：两条版本线的 URL 与 HTTP
+方法契约一致。Console 的 API Docs 默认关闭；若目标以 `api-docs` profile 启动，
+可使用 `higress_console_openapi` 获取 `/v3/api-docs/Higress`。
+
+## HTTP 快速开始
+
+Higress Console 通常使用 `8080` 端口，MCP 服务请使用其他端口：
 
 ```bash
-./scripts/init-template.sh \
-  --module github.com/acme/my-mcp \
-  --binary my-mcp \
-  --npm-package @acme/my-mcp \
-  --image ghcr.io/acme/my-mcp
-```
-
-该命令会生成构建工作流。只有项目已准备发布时才加 `--with-release`；它会额外生成 npm 和 Docker 的 tag 发布工作流。镜像为 `ghcr.io/...` 时，加 `--use-ghcr` 可使用 `GITHUB_TOKEN` 发布到 GitHub Container Registry，无需 Docker registry 凭证。其他 registry 仍需配置凭证。启用发布前，请先配置 npm registry。使用 `--dry-run` 可只查看计划，不修改文件。
-
-## 快速开始
-
-```bash
-# 需要 Go 1.25+（见 .tool-versions）
 make build
-./bin/mcp-template-binary-placeholder version
 
-# 启动 MCP server（默认 stdio）
-./bin/mcp-template-binary-placeholder mcp
-
-# 不经过 MCP 客户端，直接用 CLI 列工具 / 调工具
-./bin/mcp-template-binary-placeholder tools list
-./bin/mcp-template-binary-placeholder tools call echo --params '{"message":"hello"}'
-./bin/mcp-template-binary-placeholder tools call ping --params '{}'
+MCP_CONSOLE_URL=http://127.0.0.1:8080 \
+./bin/higress-mcp-server mcp --port 8081 --listen 0.0.0.0
 ```
 
-## 功能
+MCP 客户端连接 `http://127.0.0.1:8081/mcp`（或实际发布的主机地址）。该
+Streamable HTTP 端点不需要认证。
+`/mcp` 和 SSE 的 `/message` 端点单次请求体上限为 8 MiB。
 
-- **子命令 CLI**：`mcp` 才启动 server；`tools` / `version` / `completion` 独立
-- **多传输**：stdio、Streamable HTTP、SSE
-- **工具过滤**：`--enabled-tools`、`--disabled-tools`、`--enable-domains`、`--disable-domains`
-- **工程化默认项**：Makefile、Dockerfile、GitHub Actions CI、golangci-lint、MIT License
-
-## CLI 命令
-
-| 命令 | 作用 |
-|------|------|
-| `mcp-template-binary-placeholder mcp` | 启动 MCP server（stdio 或 HTTP） |
-| `mcp-template-binary-placeholder tools list` | 列出已启用工具 |
-| `mcp-template-binary-placeholder tools describe <name>` | 查看工具 schema |
-| `mcp-template-binary-placeholder tools call <name>` | 用 JSON 参数调用工具 |
-| `mcp-template-binary-placeholder version` | 打印构建信息 |
-| `mcp-template-binary-placeholder completion <shell>` | 生成 shell 补全脚本 |
-
-### tools 示例
+Console 自身的管理 API 通常需要认证，这与 MCP HTTP 入口相互独立：
 
 ```bash
-./bin/mcp-template-binary-placeholder tools list
-./bin/mcp-template-binary-placeholder tools list --json
-./bin/mcp-template-binary-placeholder tools describe echo
-./bin/mcp-template-binary-placeholder tools describe echo --json
-./bin/mcp-template-binary-placeholder tools call echo --params '{"message":"hello"}'
-echo '{"message":"hello"}' | ./bin/mcp-template-binary-placeholder tools call echo --params-file -
-./bin/mcp-template-binary-placeholder tools call ping --params '{}'
+export MCP_CONSOLE_USERNAME=admin
+export MCP_CONSOLE_PASSWORD='<console-password>'
+export MCP_CONSOLE_AUTH_MODE=session  # session（默认）或 basic
 ```
 
-## MCP 传输模式
-
-### Stdio（默认）
-
-```bash
-./bin/mcp-template-binary-placeholder mcp
-```
-
-Cursor / Claude Desktop 配置示例：
-
-```json
-{
-  "mcpServers": {
-    "mcp-template-binary-placeholder": {
-      "command": "/absolute/path/to/bin/mcp-template-binary-placeholder",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-### Streamable HTTP
-
-```bash
-./bin/mcp-template-binary-placeholder mcp --port 8080
-curl -s http://127.0.0.1:8080/healthz
-```
-
-客户端配置示例：
-
-```json
-{
-  "mcpServers": {
-    "mcp-template-binary-placeholder": {
-      "url": "http://127.0.0.1:8080/mcp"
-    }
-  }
-}
-```
-
-### SSE
-
-与 HTTP 模式同一进程。端点：
-
-| 路径 | 用途 |
-|------|------|
-| `/healthz` | 健康检查（`GET`/`HEAD`） |
-| `/mcp` | Streamable HTTP |
-| `/sse` | SSE 连接 |
-| `/message` | SSE message endpoint |
-
-```bash
-./bin/mcp-template-binary-placeholder mcp --port 8080 --sse-base-url http://127.0.0.1:8080
-```
-
-### Docker
-
-```bash
-# 构建
-make docker
-
-# Stdio（默认 ENTRYPOINT 为 mcp-template-binary-placeholder mcp）
-docker run -i --rm mcp-template-image-placeholder:dev
-
-# HTTP
-docker run --rm -p 8080:8080 mcp-template-image-placeholder:dev --port 8080 --listen 0.0.0.0
-```
-
-HTTP / SSE **无鉴权、无 TLS**。默认 `--listen 127.0.0.1`。仅在受信网络使用；对外暴露时请自行加反向代理与认证。
+`session` 会登录一次并保留 Console Cookie；`basic` 则在每次请求中向已配置的
+Console 地址发送 HTTP Basic 认证。仅当目标 Console 明确允许匿名操作时，才可不
+设置用户名和密码。不要把真实凭据写入受版本控制的 YAML。
 
 ## 配置
 
-优先级：**flags > 环境变量 > 配置文件 > 默认值**。
+优先级为：命令行参数 > 环境变量 > YAML > 默认值。
 
-### 环境变量
+| 设置 | 参数 | 环境变量 | 默认值 |
+| --- | --- | --- | --- |
+| Console 地址 | `--console-url` | `MCP_CONSOLE_URL` | `http://127.0.0.1:8080` |
+| Console 认证方式 | `--console-auth-mode` | `MCP_CONSOLE_AUTH_MODE` | `session` |
+| Console 超时秒数 | `--console-timeout-seconds` | `MCP_CONSOLE_TIMEOUT_SECONDS` | `30` |
+| Console 用户名 | — | `MCP_CONSOLE_USERNAME` | 未设置 |
+| Console 密码 | — | `MCP_CONSOLE_PASSWORD` | 未设置 |
+| MCP HTTP 端口 | `mcp --port` | `MCP_PORT` | `0`（stdio） |
+| MCP 监听地址 | `mcp --listen` | `MCP_LISTEN` | `127.0.0.1` |
 
-| 变量 | 说明 | 默认 |
-|------|------|------|
-| `MCP_LOG_LEVEL` | 日志级别 | `info` |
-| `MCP_PORT` | HTTP 端口（`0` = stdio） | `0` |
-| `MCP_LISTEN` | HTTP 监听地址 | `127.0.0.1` |
-| `MCP_SSE_BASE_URL` | 对外 SSE base URL | `""` |
+非敏感的 YAML 配置见 [config.example.yaml](config.example.yaml)。
 
-### 配置文件
+## MCP 工具
 
-见 `config.example.yaml`：
+| 工具 | 用途 |
+| --- | --- |
+| `higress_console_capabilities` | 列出常用资源与 API Controller 分组。 |
+| `higress_console_openapi` | 获取可选的 Console API Docs。 |
+| `higress_console_request` | 调用已配置 Console 上的任意 API 路径。 |
+| `higress_list_resource` / `higress_get_resource` | 读取常用具名资源。 |
+| `higress_create_resource` / `higress_update_resource` / `higress_delete_resource` | 修改常用具名资源。 |
+| `higress_manage_plugin_instance` | 管理全局、路由、域名和服务级 Wasm 实例。 |
 
-```yaml
-port: 0
-listen: 127.0.0.1
-sse_base_url: ""
-log_level: info
-enabled_tools: []
-disabled_tools: []
-enabled_domains: []
-disabled_domains: []
-```
+命令行可用于查看工具 Schema 或做脚本调用：
 
 ```bash
-./bin/mcp-template-binary-placeholder mcp --config config.example.yaml --port 8080
+./bin/higress-mcp-server tools list
+./bin/higress-mcp-server tools describe higress_create_resource --json
+./bin/higress-mcp-server tools call higress_list_resource \
+  --params '{"resource":"routes"}'
 ```
 
-## 目录结构
+## 其他传输方式
 
-```
-cmd/mcp-server/          # 入口
-internal/cmd/            # cobra CLI（mcp / tools / version / completion）
-pkg/core/                # config / logging / version
-pkg/server/mcp/          # MCP 注册与 transport
-pkg/server/http/         # HTTP / SSE / healthz
-pkg/toolset/             # Toolset 接口与过滤
-pkg/toolset/example/     # 示例 tools（替换为你的业务）
-.github/workflows/       # CI
-scripts/init-template.sh # 派生仓库初始化脚本
-templates/               # 由初始化脚本复制的 CI 与发布骨架
+不传 `--port` 时仍使用 stdio：
+
+```bash
+./bin/higress-mcp-server mcp
 ```
 
-## 扩展自己的 tools
-
-1. 在 `pkg/toolset/<your-domain>/` 实现 `toolset.Toolset`。
-2. 在 `internal/cmd/root.go` 的 `defaultToolsets()` 中挂载。
-3. 用 `--enabled-tools` / `--enable-domains` 控制暴露面。
+同一个 HTTP 进程还提供 `/sse`、`/message` 和健康检查 `/healthz`。
 
 ## 开发
 
 ```bash
-make tidy
-make format
-make lint
-make test
-make coverage
 make ci
-make build
-make docker
 ```
 
-生成的构建 CI（`.github/workflows/build.yaml`）会跑 lint、测试、多 OS 构建与 CLI smoke（`version` / `tools list`），以及 Docker 镜像构建。
+可选的 Docker 端到端测试会分别连接真实 Higress all-in-one 的 Console
+`2.1.11` 与 `2.2.3`：
 
-## 本地对照样例
+```bash
+make e2e
+```
 
-`third-party-projects/` 可放置本地对照代码，已在 `.gitignore` 中，不属于模板交付物。
+测试为每个版本启动隔离的临时容器并初始化 Console，再通过无需认证的
+Streamable HTTP MCP 端点创建和读取静态服务源及路由。它会验证真实网关转发到
+临时后端，删除路由后确认转发停止，并删除临时服务源。需要先启动 Docker；
+`make test` 不会启动容器。设置 `HIGRESS_E2E_VERSIONS=2.2.3` 可只运行一个
+受支持版本。
 
-## License
+`third-party-projects/` 用于放置本地参考源码，已被 Git 忽略。本项目以它比较
+Console API 契约，不会把上游源码打进交付物。
+
+## 许可证
 
 [MIT](LICENSE)

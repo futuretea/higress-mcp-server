@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"example.invalid/mcp-template-module-placeholder/pkg/core/config"
+	"github.com/futuretea/higress-mcp-server/pkg/core/config"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -22,6 +22,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.LogLevel != "info" {
 		t.Fatalf("expected log_level info, got %q", cfg.LogLevel)
+	}
+	if cfg.ConsoleURL != "http://127.0.0.1:8080" {
+		t.Fatalf("expected default console_url, got %q", cfg.ConsoleURL)
 	}
 }
 
@@ -45,6 +48,16 @@ func TestValidate(t *testing.T) {
 			name:    "bad log level",
 			cfg:     config.StaticConfig{Port: 0, LogLevel: "nope", Listen: "127.0.0.1"},
 			wantSub: "invalid log_level",
+		},
+		{
+			name:    "bad console URL",
+			cfg:     config.StaticConfig{Port: 0, LogLevel: "info", Listen: "127.0.0.1", ConsoleURL: "console.example", ConsoleAuthMode: "session", ConsoleTimeoutSeconds: 30},
+			wantSub: "console_url",
+		},
+		{
+			name:    "partial Console credentials",
+			cfg:     config.StaticConfig{Port: 0, LogLevel: "info", Listen: "127.0.0.1", ConsoleURL: "https://console.example", ConsoleUsername: "admin", ConsoleAuthMode: "session", ConsoleTimeoutSeconds: 30},
+			wantSub: "console_username",
 		},
 	}
 

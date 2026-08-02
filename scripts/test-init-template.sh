@@ -96,6 +96,8 @@ assert_contains '          username: ${{ github.actor }}' "$ghcr_workflow"
 assert_contains '          password: ${{ secrets.GITHUB_TOKEN }}' "$ghcr_workflow"
 assert_not_contains '          username: ${{ secrets.DOCKER_USERNAME }}' "$ghcr_workflow"
 assert_not_contains '          password: ${{ secrets.DOCKER_PASSWORD }}' "$ghcr_workflow"
+assert_contains '  BINARY_NAME: "ghcr-check"' "$ghcr_workflow"
+assert_contains '        run: ./bin/${BINARY_NAME} version' "$ghcr_workflow"
 
 packages_count=$(grep -Fxc '      packages: write' "$ghcr_workflow" || true)
 [ "$packages_count" -eq 1 ] || fail 'expected packages: write only once in the GHCR workflow'
@@ -108,7 +110,7 @@ build_workflow="$ghcr_template/.github/workflows/build.yaml"
 assert_contains '        run: ./bin/${BINARY_NAME} version' "$build_workflow"
 assert_not_contains '          ./bin/${BINARY_NAME} tools list' "$build_workflow"
 assert_contains '        run: go test -race ./...' "$build_workflow"
-assert_contains '        run: make test-template-init' "$build_workflow"
+assert_not_contains '        run: make test-template-init' "$build_workflow"
 
 npm_workflow="$ghcr_template/.github/workflows/release-npm.yaml"
 assert_contains '  validate-release:' "$npm_workflow"
@@ -135,6 +137,8 @@ assert_contains '          password: ${{ secrets.DOCKER_PASSWORD }}' "$generic_w
 assert_not_contains '          username: ${{ github.actor }}' "$generic_workflow"
 assert_not_contains '          password: ${{ secrets.GITHUB_TOKEN }}' "$generic_workflow"
 assert_contains '  validate-release:' "$generic_workflow"
+assert_contains '  BINARY_NAME: "generic-check"' "$generic_workflow"
+assert_contains '        run: ./bin/${BINARY_NAME} version' "$generic_workflow"
 assert_actions_pinned "$generic_workflow" "$generic_npm_workflow"
 assert_not_ignored "$generic_template" npm/acme-generic-check/bin/index.js
 

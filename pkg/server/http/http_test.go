@@ -6,14 +6,16 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	"example.invalid/mcp-template-module-placeholder/pkg/core/config"
-	internalhttp "example.invalid/mcp-template-module-placeholder/pkg/server/http"
-	mcpserver "example.invalid/mcp-template-module-placeholder/pkg/server/mcp"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset/example"
+	"github.com/futuretea/higress-mcp-server/pkg/core/config"
+	internalhttp "github.com/futuretea/higress-mcp-server/pkg/server/http"
+	mcpserver "github.com/futuretea/higress-mcp-server/pkg/server/mcp"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset/example"
 )
 
 func TestHealthz(t *testing.T) {
@@ -110,6 +112,39 @@ func TestServeListenerShutdown(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("ServeListener did not exit after cancel")
+	}
+}
+
+func TestMCPRequestBodiesAreLimitedBeforeTransportParsing(t *testing.T) {
+	mcpServer, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{LogLevel: "info"},
+		Toolsets:     []toolset.Toolset{&example.Toolset{}},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer mcpServer.Close()
+
+	handler := internalhttp.NewHandler(mcpServer, &http.Server{}, "")
+	tooLargeBody := strings.Repeat("x", 8<<20+1)
+
+	for _, chunked := range []bool{false, true} {
+		for _, endpoint := range []string{internalhttp.MCPEndpoint, internalhttp.SSEMessageEndpoint} {
+			t.Run(endpoint+"/chunked="+strconv.FormatBool(chunked), func(t *testing.T) {
+				req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(tooLargeBody))
+				if err != nil {
+					t.Fatalf("NewRequest: %v", err)
+				}
+				if chunked {
+					req.ContentLength = -1
+				}
+				rec := &responseRecorder{header: make(http.Header)}
+				handler.ServeHTTP(rec, req)
+				if rec.status != http.StatusRequestEntityTooLarge {
+					t.Fatalf("status=%d, want %d", rec.status, http.StatusRequestEntityTooLarge)
+				}
+			})
+		}
 	}
 }
 

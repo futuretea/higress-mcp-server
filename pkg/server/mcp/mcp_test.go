@@ -7,10 +7,10 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"example.invalid/mcp-template-module-placeholder/pkg/core/config"
-	mcpserver "example.invalid/mcp-template-module-placeholder/pkg/server/mcp"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset"
-	"example.invalid/mcp-template-module-placeholder/pkg/toolset/example"
+	"github.com/futuretea/higress-mcp-server/pkg/core/config"
+	mcpserver "github.com/futuretea/higress-mcp-server/pkg/server/mcp"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset/example"
 )
 
 func TestNewServerRegistersExampleTools(t *testing.T) {

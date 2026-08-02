@@ -6,6 +6,7 @@ on:
       - "v*"
 
 env:
+  BINARY_NAME: "mcp-template-binary-placeholder"
   DOCKER_IMAGE: "mcp-template-image-placeholder"
   DOCKER_REGISTRY: "__MCP_DOCKER_REGISTRY__"
   GO_VERSION: "__MCP_GO_VERSION__"

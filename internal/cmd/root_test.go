@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"example.invalid/mcp-template-module-placeholder/internal/cmd"
+	"github.com/futuretea/higress-mcp-server/internal/cmd"
 )
 
 func TestRootHelpListsSubcommands(t *testing.T) {
@@ -48,18 +48,18 @@ func TestToolsListAndCall(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("tools list: %v", err)
 	}
-	if !strings.Contains(out.String(), "echo") || !strings.Contains(out.String(), "ping") {
-		t.Fatalf("tools list missing echo/ping:\n%s", out.String())
+	if !strings.Contains(out.String(), "higress_console_request") || !strings.Contains(out.String(), "higress_list_resource") {
+		t.Fatalf("tools list missing Higress tools:\n%s", out.String())
 	}
 
 	out.Reset()
 	root = cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
-	root.SetArgs([]string{"tools", "call", "echo", "--params", `{"message":"hi"}`})
+	root.SetArgs([]string{"tools", "call", "higress_console_capabilities", "--params", `{}`})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("tools call: %v", err)
 	}
-	if strings.TrimSpace(out.String()) != "hi" {
-		t.Fatalf("echo result = %q", out.String())
+	if !strings.Contains(out.String(), "common_resources") {
+		t.Fatalf("capabilities result = %q", out.String())
 	}
 }
 
@@ -70,7 +70,7 @@ func TestVersionCommand(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if !strings.Contains(out.String(), "mcp-template-binary-placeholder") {
+	if !strings.Contains(out.String(), "higress-mcp-server") {
 		t.Fatalf("unexpected version output: %q", out.String())
 	}
 }
@@ -95,7 +95,7 @@ func TestToolsUnknownTool(t *testing.T) {
 func TestToolsRejectsNullParams(t *testing.T) {
 	var out bytes.Buffer
 	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
-	root.SetArgs([]string{"tools", "call", "ping", "--params", "null"})
+	root.SetArgs([]string{"tools", "call", "higress_console_capabilities", "--params", "null"})
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "expected an object") {
 		t.Fatalf("expected JSON object error, got %v", err)
@@ -112,8 +112,8 @@ func TestCommandsReturnOutputErrors(t *testing.T) {
 		{name: "completion install", args: []string{"completion", "install"}},
 		{name: "version", args: []string{"version"}},
 		{name: "tools list", args: []string{"tools", "list"}},
-		{name: "tools describe", args: []string{"tools", "describe", "echo"}},
-		{name: "tools call", args: []string{"tools", "call", "echo", "--params", `{"message":"hi"}`}},
+		{name: "tools describe", args: []string{"tools", "describe", "higress_console_request"}},
+		{name: "tools call", args: []string{"tools", "call", "higress_console_capabilities", "--params", `{}`}},
 	}
 
 	for _, tt := range tests {
