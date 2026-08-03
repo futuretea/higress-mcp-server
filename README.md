@@ -132,6 +132,35 @@ Local reference source checkouts belong in `third-party-projects/`; the
 directory is ignored by Git. This project uses it to compare Console API
 contracts without shipping the upstream source.
 
+## Release artifacts
+
+Release tags use `vX.Y.Z`. Use `X.Y.Z` for npm and `vX.Y.Z` for Docker.
+
+```bash
+npx -y @futuretea/higress-mcp-server@X.Y.Z
+docker run --rm -i ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
+```
+
+Both launch the MCP server's `mcp` command. Arguments after the package or
+image are forwarded to that command. Configure an MCP client that supports
+stdio with npm:
+
+```json
+{
+  "mcpServers": {
+    "higress-console": {
+      "command": "npx",
+      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"]
+    }
+  }
+}
+```
+
+Supported release platforms are recorded in `.github/ci/release-platforms.json`.
+Before the first npm release, set the repository variable `NPM_REGISTRY_URL`
+and set `NPM_TOKEN` with publish permission for that registry. Docker images
+publish to GHCR with the workflow's `GITHUB_TOKEN`.
+
 ## License
 
 [MIT](LICENSE)

@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/higress-mcp-server-darwin-amd64",
+  "version": "0.0.0",
+  "description": "Higress Console MCP server binary for darwin/amd64",
+  "files": ["bin/higress-mcp-server"],
+  "os": ["darwin"],
+  "cpu": ["x64"]
+}

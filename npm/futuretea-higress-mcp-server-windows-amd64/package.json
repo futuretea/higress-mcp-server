@@ -1,0 +1,8 @@
+{
+  "name": "@futuretea/higress-mcp-server-windows-amd64",
+  "version": "0.0.0",
+  "description": "Higress Console MCP server binary for windows/amd64",
+  "files": ["bin/higress-mcp-server.exe"],
+  "os": ["win32"],
+  "cpu": ["x64"]
+}

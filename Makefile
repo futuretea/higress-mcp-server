@@ -7,7 +7,7 @@ LDFLAGS := -X github.com/futuretea/higress-mcp-server/pkg/core/version.Version=$
 	-X github.com/futuretea/higress-mcp-server/pkg/core/version.Commit=$(COMMIT) \
 	-X github.com/futuretea/higress-mcp-server/pkg/core/version.Date=$(DATE)
 
-
+-include release.mk
 
 .PHONY: build test test-race test-template-init lint format tidy ci e2e clean docker coverage
 

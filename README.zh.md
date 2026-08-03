@@ -117,6 +117,33 @@ Streamable HTTP MCP 端点创建和读取静态服务源及路由。它会验证
 `third-party-projects/` 用于放置本地参考源码，已被 Git 忽略。本项目以它比较
 Console API 契约，不会把上游源码打进交付物。
 
+## 发布产物
+
+稳定发布标签使用 `vX.Y.Z`。npm 使用 `X.Y.Z`；Docker 使用 `vX.Y.Z`。
+
+```bash
+npx -y @futuretea/higress-mcp-server@X.Y.Z
+docker run --rm -i ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
+```
+
+两种方式都会启动 MCP server 的 `mcp` 命令。包名或镜像名之后的参数会转发给该
+命令。支持 stdio 的 MCP 客户端可通过 npm 配置：
+
+```json
+{
+  "mcpServers": {
+    "higress-console": {
+      "command": "npx",
+      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"]
+    }
+  }
+}
+```
+
+支持的发布平台记录在 `.github/ci/release-platforms.json`。首次发布 npm 前，设置
+仓库变量 `NPM_REGISTRY_URL`，并设置对该 registry 有发布权限的 `NPM_TOKEN`。
+Docker 镜像使用工作流的 `GITHUB_TOKEN` 发布到 GHCR。
+
 ## 许可证
 
 [MIT](LICENSE)

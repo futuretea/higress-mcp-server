@@ -1,0 +1,17 @@
+{
+  "name": "@futuretea/higress-mcp-server",
+  "version": "0.0.0",
+  "description": "Higress Console MCP server binary launcher",
+  "main": "./bin/index.js",
+  "bin": {
+    "higress-mcp-server": "bin/index.js"
+  },
+  "optionalDependencies": {
+    "@futuretea/higress-mcp-server-darwin-amd64": "0.0.0",
+    "@futuretea/higress-mcp-server-darwin-arm64": "0.0.0",
+    "@futuretea/higress-mcp-server-linux-amd64": "0.0.0",
+    "@futuretea/higress-mcp-server-linux-arm64": "0.0.0",
+    "@futuretea/higress-mcp-server-windows-amd64": "0.0.0"
+  },
+  "license": "MIT"
+}
