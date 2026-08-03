@@ -125,28 +125,107 @@ Streamable HTTP MCP 端点创建和读取静态服务源及路由。它会验证
 `third-party-projects/` 用于放置本地参考源码，已被 Git 忽略。本项目以它比较
 Console API 契约，不会把上游源码打进交付物。
 
-## 发布产物
+## 使用已发布版本
 
-稳定发布标签使用 `vX.Y.Z`。npm 使用 `X.Y.Z`；Docker 使用 `vX.Y.Z`。
+GitHub 发布标签使用 `vX.Y.Z`。对应的 npm 包版本为 `X.Y.Z`，Docker 镜像标签为
+`vX.Y.Z`。以下命令适用于 npm 和 Docker 发布工作流均已成功的标签。最初的
+`v0.0.1` GitHub release 早于这些工作流，因此不提供该 scoped npm 包或可公开访问的
+Docker 镜像。
+
+### npm
+
+通过 `npx` 以 stdio 方式运行 MCP server：
 
 ```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
 npx -y @futuretea/higress-mcp-server@X.Y.Z
-docker run --rm -i ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
 ```
 
-两种方式都会启动 MCP server 的 `mcp` 命令。包名或镜像名之后的参数会转发给该
-命令。支持 stdio 的 MCP 客户端可通过 npm 配置：
+MCP 客户端可通过环境变量传入 Console 地址：
 
 ```json
 {
   "mcpServers": {
     "higress-console": {
       "command": "npx",
-      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"]
+      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"],
+      "env": {
+        "MCP_HIGRESS_CONSOLE_URL": "http://higress-console:8080"
+      }
     }
   }
 }
 ```
+
+npm 命令是 MCP 入口，始终启动服务的 `mcp` 命令。包名之后的参数是 MCP 参数，例如
+`--port 8081`；不能借此执行服务的其他 CLI 子命令。请固定为需要运行的包版本。
+Console 凭据应通过运行环境的 secret 机制提供，不要写入受版本控制的客户端配置。
+若发布使用 npmjs.org 以外的 registry，请先将 `@futuretea` scope 配置为从该 registry
+解析，再运行 `npx`。
+
+### Docker
+
+直接运行已发布镜像，以 stdio 方式提供 MCP：
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
+docker run --rm -i \
+  --env MCP_HIGRESS_CONSOLE_URL \
+  ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
+```
+
+如果 MCP 客户端通过 Docker 启动服务，需要把 Console 地址继续传入容器：
+
+```json
+{
+  "mcpServers": {
+    "higress-console": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--env",
+        "MCP_HIGRESS_CONSOLE_URL",
+        "ghcr.io/futuretea/higress-mcp-server:vX.Y.Z"
+      ],
+      "env": {
+        "MCP_HIGRESS_CONSOLE_URL": "http://higress-console:8080"
+      }
+    }
+  }
+}
+```
+
+配置的 Console 主机名必须能从容器访问。容器中的 `127.0.0.1` 指向容器自身，而不是
+Docker 宿主机；请使用 Docker 网络中的 Console 主机名，或在适用时使用平台对应的
+宿主机网关。若 Console 需要认证，请通过运行环境的 secret 机制传递
+`MCP_HIGRESS_CONSOLE_USERNAME` 与 `MCP_HIGRESS_CONSOLE_PASSWORD`。
+
+### HTTP 模式
+
+在 npm 包名后传入 MCP 参数即可启动 Streamable HTTP，而非 stdio。默认监听
+loopback：
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://127.0.0.1:8080 \
+npx -y @futuretea/higress-mcp-server@X.Y.Z --port 8081
+```
+
+使用 Docker 时，服务必须监听容器的所有接口，但向宿主机发布的端口仍可只绑定
+loopback：
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
+docker run --rm \
+  --env MCP_HIGRESS_CONSOLE_URL \
+  --publish 127.0.0.1:8081:8081 \
+  ghcr.io/futuretea/higress-mcp-server:vX.Y.Z \
+  --port 8081 --listen 0.0.0.0
+```
+
+Streamable HTTP MCP 客户端连接 `http://127.0.0.1:8081/mcp`。HTTP server 没有
+内建认证或 TLS；仅应部署在可信网络中，或置于提供所需保护的基础设施之后。
 
 支持的发布平台记录在 `.github/ci/release-platforms.json`。首次发布 npm 前，设置
 仓库变量 `NPM_REGISTRY_URL`，并设置对该 registry 有发布权限的 `NPM_TOKEN`。

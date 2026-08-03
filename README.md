@@ -142,29 +142,114 @@ Local reference source checkouts belong in `third-party-projects/`; the
 directory is ignored by Git. This project uses it to compare Console API
 contracts without shipping the upstream source.
 
-## Release artifacts
+## Use a published release
 
-Release tags use `vX.Y.Z`. Use `X.Y.Z` for npm and `vX.Y.Z` for Docker.
+The GitHub release tag uses `vX.Y.Z`. Its npm package version is `X.Y.Z` and
+its Docker image tag is `vX.Y.Z`. Use the commands below for a tag whose npm
+and Docker publishing workflows have completed. The initial `v0.0.1` GitHub
+release predates those workflows, so it does not provide the scoped npm package
+or a publicly accessible Docker image.
+
+### npm
+
+Run the MCP server over stdio with `npx`:
 
 ```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
 npx -y @futuretea/higress-mcp-server@X.Y.Z
-docker run --rm -i ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
 ```
 
-Both launch the MCP server's `mcp` command. Arguments after the package or
-image are forwarded to that command. Configure an MCP client that supports
-stdio with npm:
+An MCP client can pass the Console address through its environment:
 
 ```json
 {
   "mcpServers": {
     "higress-console": {
       "command": "npx",
-      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"]
+      "args": ["-y", "@futuretea/higress-mcp-server@X.Y.Z"],
+      "env": {
+        "MCP_HIGRESS_CONSOLE_URL": "http://higress-console:8080"
+      }
     }
   }
 }
 ```
+
+The npm command is an MCP entry point: it always starts the server's `mcp`
+command. Arguments after the package are MCP flags, such as `--port 8081`;
+they cannot invoke the server's other CLI subcommands. Pin the intended package
+version. Supply Console credentials through your runtime secret mechanism, not
+through version-controlled client configuration.
+If your release uses a registry other than npmjs.org, configure npm to resolve
+the `@futuretea` scope from that registry before running `npx`.
+
+### Docker
+
+Run the published image over stdio:
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
+docker run --rm -i \
+  --env MCP_HIGRESS_CONSOLE_URL \
+  ghcr.io/futuretea/higress-mcp-server:vX.Y.Z
+```
+
+For an MCP client that starts Docker, forward the Console address into the
+container:
+
+```json
+{
+  "mcpServers": {
+    "higress-console": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--env",
+        "MCP_HIGRESS_CONSOLE_URL",
+        "ghcr.io/futuretea/higress-mcp-server:vX.Y.Z"
+      ],
+      "env": {
+        "MCP_HIGRESS_CONSOLE_URL": "http://higress-console:8080"
+      }
+    }
+  }
+}
+```
+
+The configured Console hostname must be reachable from the container.
+`127.0.0.1` inside a container is the container itself, not the Docker host;
+use a Console hostname on the Docker network or the platform-specific host
+gateway when appropriate. Pass `MCP_HIGRESS_CONSOLE_USERNAME` and
+`MCP_HIGRESS_CONSOLE_PASSWORD` through a runtime secret mechanism if the
+Console requires authentication.
+
+### HTTP mode
+
+Pass MCP flags after the npm package to start Streamable HTTP instead of stdio.
+The default listener is loopback:
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://127.0.0.1:8080 \
+npx -y @futuretea/higress-mcp-server@X.Y.Z --port 8081
+```
+
+For Docker, the server must listen on all container interfaces, while the
+published port can remain loopback-only on the host:
+
+```bash
+MCP_HIGRESS_CONSOLE_URL=http://higress-console:8080 \
+docker run --rm \
+  --env MCP_HIGRESS_CONSOLE_URL \
+  --publish 127.0.0.1:8081:8081 \
+  ghcr.io/futuretea/higress-mcp-server:vX.Y.Z \
+  --port 8081 --listen 0.0.0.0
+```
+
+Connect a Streamable HTTP MCP client to `http://127.0.0.1:8081/mcp`. The HTTP
+server has no built-in authentication or TLS; keep it on a trusted network or
+put it behind infrastructure that provides the required protection.
 
 Supported release platforms are recorded in `.github/ci/release-platforms.json`.
 Before the first npm release, set the repository variable `NPM_REGISTRY_URL`
