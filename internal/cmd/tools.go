@@ -59,8 +59,8 @@ func newToolsDescribeCommand(streams IOStreams, cfgFile *string, v *viper.Viper)
 		Use:     "describe <tool-name>",
 		Aliases: []string{"schema"},
 		Short:   "describe an enabled tool schema",
-		Example: `  higress-mcp-server tools describe higress_console_request
-	  higress-mcp-server tools describe higress_console_request --json`,
+		Example: `  higress-mcp-server --read-only=false tools describe higress_console_request
+	  higress-mcp-server --read-only=false tools describe higress_console_request --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadCLIConfig(cmd, *cfgFile, v)

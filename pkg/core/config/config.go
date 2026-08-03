@@ -26,6 +26,7 @@ type StaticConfig struct {
 	DisabledTools         []string `mapstructure:"disabled_tools"`
 	EnabledDomains        []string `mapstructure:"enabled_domains"`
 	DisabledDomains       []string `mapstructure:"disabled_domains"`
+	ReadOnly              bool     `mapstructure:"read_only"`
 }
 
 // Validate checks whether the configuration can be used to start the server.
@@ -83,6 +84,7 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 		"disabled_tools":          []string{},
 		"enabled_domains":         []string{},
 		"disabled_domains":        []string{},
+		"read_only":               true,
 	}
 	for key, value := range defaults {
 		v.SetDefault(key, value)
@@ -110,6 +112,7 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 		"disabled_tools":          "MCP_DISABLED_TOOLS",
 		"enabled_domains":         "MCP_ENABLED_DOMAINS",
 		"disabled_domains":        "MCP_DISABLED_DOMAINS",
+		"read_only":               "MCP_READ_ONLY",
 	}
 	for key, variable := range envBindings {
 		if err := v.BindEnv(key, variable); err != nil {

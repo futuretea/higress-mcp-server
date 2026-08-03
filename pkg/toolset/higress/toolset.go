@@ -17,15 +17,16 @@ const Domain = "higress"
 
 // Toolset groups the Higress Console tools around a configured API client.
 type Toolset struct {
-	client *console.Client
+	client   *console.Client
+	readOnly bool
 }
 
 // New creates a Higress Console toolset.
-func New(client *console.Client) (*Toolset, error) {
+func New(client *console.Client, readOnly bool) (*Toolset, error) {
 	if client == nil {
 		return nil, errors.New("console client is required")
 	}
-	return &Toolset{client: client}, nil
+	return &Toolset{client: client, readOnly: readOnly}, nil
 }
 
 // GetName returns the toolset identifier.
@@ -36,9 +37,9 @@ func (t *Toolset) GetDescription() string {
 	return "Manage a Higress Console through common resource tools or its complete documented HTTP API"
 }
 
-// GetTools returns all Higress Console MCP tools.
+// GetTools returns the Higress Console MCP tools allowed by this toolset's mode.
 func (t *Toolset) GetTools() []toolset.ServerTool {
-	return []toolset.ServerTool{
+	tools := []toolset.ServerTool{
 		t.readOnlyTool("higress_console_capabilities", "List common resources and explain how to access the complete Console API.", capabilitiesSchema, t.capabilities),
 		t.readOnlyTool("higress_console_openapi", "Fetch Higress Console's OpenAPI document. The target must enable its api-docs profile.", emptySchema, t.openapi),
 		t.requestTool("higress_console_request", "Call any Higress Console API path. Use higress_console_openapi first when a specialized tool does not cover the operation.", requestSchema, t.request),
@@ -49,6 +50,17 @@ func (t *Toolset) GetTools() []toolset.ServerTool {
 		t.requestTool("higress_delete_resource", "Delete one named common Higress resource.", namedResourceSchema, t.deleteResource),
 		t.requestTool("higress_manage_plugin_instance", "List, get, upsert, or delete a Wasm plugin instance at global, route, domain, or service scope.", pluginInstanceSchema, t.managePluginInstance),
 	}
+	if !t.readOnly {
+		return tools
+	}
+
+	readOnlyTools := make([]toolset.ServerTool, 0, len(tools)-len(writeCapableToolNames))
+	for _, tool := range tools {
+		if _, writeCapable := writeCapableToolNames[tool.Tool.Name]; !writeCapable {
+			readOnlyTools = append(readOnlyTools, tool)
+		}
+	}
+	return readOnlyTools
 }
 
 func (t *Toolset) readOnlyTool(name, description string, schema json.RawMessage, handler toolset.ToolHandler) toolset.ServerTool {
@@ -75,15 +87,29 @@ func (t *Toolset) requestTool(name, description string, schema json.RawMessage, 
 }
 
 func (t *Toolset) capabilities(_ context.Context, _ map[string]any) (string, error) {
+	completeAPI := map[string]string{
+		"discovery_tool": "higress_console_openapi",
+		"note":           "API Docs are disabled by default in Higress Console.",
+	}
+	if t.readOnly {
+		completeAPI["note"] = "Set read_only=false to enable the generic request tool and other write-capable tools. API Docs are disabled by default in Higress Console."
+	} else {
+		completeAPI["request_tool"] = "higress_console_request"
+		completeAPI["note"] = "The request tool is restricted to the configured Higress Console origin. API Docs are disabled by default in Higress Console."
+	}
 	return formatJSON(map[string]any{
 		"common_resources": console.Resources(),
 		"api_groups":       console.APIGroups(),
-		"complete_api": map[string]string{
-			"discovery_tool": "higress_console_openapi",
-			"request_tool":   "higress_console_request",
-			"note":           "The request tool is restricted to the configured Higress Console origin. API Docs are disabled by default in Higress Console.",
-		},
+		"complete_api":     completeAPI,
 	})
+}
+
+var writeCapableToolNames = map[string]struct{}{
+	"higress_console_request":        {},
+	"higress_create_resource":        {},
+	"higress_update_resource":        {},
+	"higress_delete_resource":        {},
+	"higress_manage_plugin_instance": {},
 }
 
 func (t *Toolset) openapi(ctx context.Context, _ map[string]any) (string, error) {

@@ -16,9 +16,10 @@ The server provides friendly tools for the resources most agents manage often:
 - Wasm plugins and scoped plugin instances;
 - AI routes and LLM providers.
 
-`higress_console_request` is the complete API escape hatch. It can invoke any
-path on the configured Console origin, including system, dashboard, user, MCP
-server, AI proxy, and Grafana controller paths. It rejects a host, query string,
+`higress_console_request` is the complete API escape hatch when
+`read_only=false`. It can invoke any path on the configured Console origin,
+including system, dashboard, user, MCP server, AI proxy, and Grafana controller
+paths. It rejects a host, query string,
 or traversal sequence in the supplied path, and it rejects redirects that leave
 the configured Console base URL (including any path prefix), so it cannot be
 used as a proxy to another origin or application. Run
@@ -74,8 +75,17 @@ Configuration precedence is flags, environment variables, YAML, then defaults.
 | Console password | — | `MCP_HIGRESS_CONSOLE_PASSWORD` | unset |
 | MCP HTTP port | `mcp --port` | `MCP_PORT` | `0` (stdio) |
 | MCP listen host | `mcp --listen` | `MCP_LISTEN` | `127.0.0.1` |
+| Read-only tool catalog | `--read-only` | `MCP_READ_ONLY` | `true` |
 
 See [config.example.yaml](config.example.yaml) for non-secret YAML settings.
+
+The server is read-only by default. It exposes only `higress_console_capabilities`,
+`higress_console_openapi`, `higress_list_resource`, and
+`higress_get_resource`; `enabled_tools` cannot restore excluded write-capable
+tools. To manage Console resources, explicitly set `read_only: false`,
+`MCP_READ_ONLY=false`, or `--read-only=false` and restart the server. This
+catalog policy does not add authentication or authorization for a public MCP
+HTTP endpoint; place public deployments behind an authenticated reverse proxy.
 
 ## Tools
 
@@ -83,16 +93,16 @@ See [config.example.yaml](config.example.yaml) for non-secret YAML settings.
 | --- | --- |
 | `higress_console_capabilities` | List common resource names and API controller groups. |
 | `higress_console_openapi` | Fetch optional Console API Docs. |
-| `higress_console_request` | Call any Console API path on the configured origin. |
+| `higress_console_request` | Call any Console API path on the configured origin; available only with `read_only=false`. |
 | `higress_list_resource` / `higress_get_resource` | Read common named resources. |
-| `higress_create_resource` / `higress_update_resource` / `higress_delete_resource` | Change common named resources. |
-| `higress_manage_plugin_instance` | Manage global, route, domain, and service Wasm instances. |
+| `higress_create_resource` / `higress_update_resource` / `higress_delete_resource` | Change common named resources; available only with `read_only=false`. |
+| `higress_manage_plugin_instance` | Manage global, route, domain, and service Wasm instances; available only with `read_only=false`. |
 
 The CLI is useful for checking schemas and making scripted calls:
 
 ```bash
 ./bin/higress-mcp-server tools list
-./bin/higress-mcp-server tools describe higress_create_resource --json
+./bin/higress-mcp-server --read-only=false tools describe higress_create_resource --json
 ./bin/higress-mcp-server tools call higress_list_resource \
   --params '{"resource":"routes"}'
 ```

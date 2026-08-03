@@ -56,6 +56,7 @@ func addCommonFlags(command *cobra.Command, cfgFile *string) {
 	flags.StringSlice("disabled-tools", []string{}, "comma-separated list of tool names to disable")
 	flags.StringSlice("enable-domains", []string{}, "comma-separated list of tool domains to enable")
 	flags.StringSlice("disable-domains", []string{}, "comma-separated list of tool domains to disable")
+	flags.Bool("read-only", true, "expose only read-only Higress Console tools")
 }
 
 func bindCommonFlags(v *viper.Viper, cmd *cobra.Command) error {
@@ -68,6 +69,7 @@ func bindCommonFlags(v *viper.Viper, cmd *cobra.Command) error {
 		"disabled_tools":          "disabled-tools",
 		"enabled_domains":         "enable-domains",
 		"disabled_domains":        "disable-domains",
+		"read_only":               "read-only",
 	}
 	for key, flag := range bindings {
 		if err := v.BindPFlag(key, flags.Lookup(flag)); err != nil {
@@ -102,7 +104,7 @@ func defaultToolsets(cfg *config.StaticConfig) ([]toolset.Toolset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Console client: %w", err)
 	}
-	consoleToolset, err := higress.New(client)
+	consoleToolset, err := higress.New(client, cfg.ReadOnly)
 	if err != nil {
 		return nil, fmt.Errorf("create Higress toolset: %w", err)
 	}

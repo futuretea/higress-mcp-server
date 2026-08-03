@@ -2,8 +2,11 @@ package cmd_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -41,25 +44,68 @@ func TestRootWithoutArgsShowsHelp(t *testing.T) {
 	}
 }
 
-func TestToolsListAndCall(t *testing.T) {
-	var out bytes.Buffer
-	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
-	root.SetArgs([]string{"tools", "list"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("tools list: %v", err)
-	}
-	if !strings.Contains(out.String(), "higress_console_request") || !strings.Contains(out.String(), "higress_list_resource") {
-		t.Fatalf("tools list missing Higress tools:\n%s", out.String())
+func TestToolsDefaultReadOnlyCatalog(t *testing.T) {
+	requireCLIToolNames(t, nil, []string{
+		"higress_console_capabilities",
+		"higress_console_openapi",
+		"higress_list_resource",
+		"higress_get_resource",
+	})
+
+	for _, name := range writeCapableToolNames {
+		t.Run(name+" is unknown", func(t *testing.T) {
+			for _, args := range [][]string{
+				{"tools", "describe", name},
+				{"tools", "call", name, "--params", "{}"},
+			} {
+				var out bytes.Buffer
+				root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
+				root.SetArgs(args)
+				err := root.Execute()
+				if err == nil || !strings.Contains(err.Error(), "unknown tool") {
+					t.Fatalf("%v error = %v, want unknown tool", args, err)
+				}
+			}
+		})
 	}
 
-	out.Reset()
-	root = cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
+	var out bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
 	root.SetArgs([]string{"tools", "call", "higress_console_capabilities", "--params", `{}`})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("tools call: %v", err)
 	}
 	if !strings.Contains(out.String(), "common_resources") {
 		t.Fatalf("capabilities result = %q", out.String())
+	}
+	if strings.Contains(out.String(), "higress_console_request") {
+		t.Fatalf("read-only capabilities advertise the generic request tool: %q", out.String())
+	}
+}
+
+func TestToolsReadOnlyFalseRestoresFullCatalog(t *testing.T) {
+	requireCLIToolNames(t, []string{"--read-only=false"}, []string{
+		"higress_console_capabilities",
+		"higress_console_openapi",
+		"higress_console_request",
+		"higress_list_resource",
+		"higress_get_resource",
+		"higress_create_resource",
+		"higress_update_resource",
+		"higress_delete_resource",
+		"higress_manage_plugin_instance",
+	})
+}
+
+func TestToolsDescribeHelpUsesWriteModeForWriteToolExamples(t *testing.T) {
+	var out bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
+	root.SetArgs([]string{"tools", "describe", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("describe help: %v", err)
+	}
+	if !strings.Contains(out.String(), "--read-only=false tools describe higress_console_request") {
+		t.Fatalf("describe help does not opt into write mode:\n%s", out.String())
 	}
 }
 
@@ -112,7 +158,7 @@ func TestCommandsReturnOutputErrors(t *testing.T) {
 		{name: "completion install", args: []string{"completion", "install"}},
 		{name: "version", args: []string{"version"}},
 		{name: "tools list", args: []string{"tools", "list"}},
-		{name: "tools describe", args: []string{"tools", "describe", "higress_console_request"}},
+		{name: "tools describe", args: []string{"--read-only=false", "tools", "describe", "higress_console_request"}},
 		{name: "tools call", args: []string{"tools", "call", "higress_console_capabilities", "--params", `{}`}},
 	}
 
@@ -137,4 +183,41 @@ type errorWriter struct {
 
 func (w errorWriter) Write([]byte) (int, error) {
 	return 0, w.err
+}
+
+var writeCapableToolNames = []string{
+	"higress_console_request",
+	"higress_create_resource",
+	"higress_update_resource",
+	"higress_delete_resource",
+	"higress_manage_plugin_instance",
+}
+
+func requireCLIToolNames(t *testing.T, prefix, want []string) {
+	t.Helper()
+	var out bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
+	args := append([]string(nil), prefix...)
+	args = append(args, "tools", "list", "--json")
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("tools list: %v", err)
+	}
+
+	var summaries []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &summaries); err != nil {
+		t.Fatalf("decode tools list: %v\n%s", err, out.String())
+	}
+	got := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		got = append(got, summary.Name)
+	}
+	want = append([]string(nil), want...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools list = %#v, want %#v", got, want)
+	}
 }

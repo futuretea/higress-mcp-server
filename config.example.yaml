@@ -7,6 +7,8 @@ console_url: http://127.0.0.1:8080
 # console_auth_mode: session # session (default) or basic
 console_auth_mode: session
 console_timeout_seconds: 30
+# Default safety mode. Set false only when the MCP server must manage Console resources.
+read_only: true
 enabled_tools: []
 disabled_tools: []
 enabled_domains: []

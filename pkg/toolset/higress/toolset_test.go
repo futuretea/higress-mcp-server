@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -13,18 +15,20 @@ import (
 	"github.com/futuretea/higress-mcp-server/pkg/toolset/higress"
 )
 
-func TestToolsetExposesConsoleTools(t *testing.T) {
+func TestToolsetWriteModeExposesConsoleTools(t *testing.T) {
 	client, err := console.NewClient(console.Config{BaseURL: "https://console.example", TimeoutSeconds: 5})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	set, err := higress.New(client)
+	set, err := higress.New(client, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	handlers := handlersByName(set.GetTools())
-	for _, tool := range set.GetTools() {
+	tools := set.GetTools()
+	requireToolNames(t, tools, allHigressToolNames)
+	handlers := handlersByName(tools)
+	for _, tool := range tools {
 		if _, err := json.Marshal(tool.Tool); err != nil {
 			t.Fatalf("marshal tool %q: %v", tool.Tool.Name, err)
 		}
@@ -44,6 +48,28 @@ func TestToolsetExposesConsoleTools(t *testing.T) {
 	}
 }
 
+func TestToolsetReadOnlyExposesOnlyReadTools(t *testing.T) {
+	client, err := console.NewClient(console.Config{BaseURL: "https://console.example", TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, true)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	tools := set.GetTools()
+	requireToolNames(t, tools, readOnlyToolNames)
+	handlers := handlersByName(tools)
+	capabilities, err := handlers["higress_console_capabilities"](context.Background(), nil)
+	if err != nil {
+		t.Fatalf("capabilities: %v", err)
+	}
+	if strings.Contains(capabilities, "higress_console_request") {
+		t.Fatalf("read-only capabilities advertise the generic request tool: %q", capabilities)
+	}
+}
+
 func TestResourceAndPluginToolsUseConsolePaths(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +82,7 @@ func TestResourceAndPluginToolsUseConsolePaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	set, err := higress.New(client)
+	set, err := higress.New(client, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -81,7 +107,7 @@ func TestGenericToolRejectsExternalPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	set, err := higress.New(client)
+	set, err := higress.New(client, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -98,7 +124,7 @@ func TestPluginInstanceToolRejectsEncodedPathDelimiters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	set, err := higress.New(client)
+	set, err := higress.New(client, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -120,4 +146,37 @@ func handlersByName(tools []toolset.ServerTool) map[string]toolset.ToolHandler {
 		handlers[tool.Tool.Name] = tool.Handler
 	}
 	return handlers
+}
+
+var readOnlyToolNames = []string{
+	"higress_console_capabilities",
+	"higress_console_openapi",
+	"higress_list_resource",
+	"higress_get_resource",
+}
+
+var allHigressToolNames = []string{
+	"higress_console_capabilities",
+	"higress_console_openapi",
+	"higress_console_request",
+	"higress_list_resource",
+	"higress_get_resource",
+	"higress_create_resource",
+	"higress_update_resource",
+	"higress_delete_resource",
+	"higress_manage_plugin_instance",
+}
+
+func requireToolNames(t *testing.T, tools []toolset.ServerTool, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		got = append(got, tool.Tool.Name)
+	}
+	want = append([]string(nil), want...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tool names = %#v, want %#v", got, want)
+	}
 }

@@ -7,10 +7,12 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/futuretea/higress-mcp-server/pkg/console"
 	"github.com/futuretea/higress-mcp-server/pkg/core/config"
 	mcpserver "github.com/futuretea/higress-mcp-server/pkg/server/mcp"
 	"github.com/futuretea/higress-mcp-server/pkg/toolset"
 	"github.com/futuretea/higress-mcp-server/pkg/toolset/example"
+	"github.com/futuretea/higress-mcp-server/pkg/toolset/higress"
 )
 
 func TestNewServerRegistersExampleTools(t *testing.T) {
@@ -37,6 +39,71 @@ func TestNewServerRegistersExampleTools(t *testing.T) {
 	if !names["echo"] || !names["ping"] {
 		t.Fatalf("expected echo and ping, got %v", tools)
 	}
+}
+
+func TestNewServerRegistersReadOnlyHigressTools(t *testing.T) {
+	server, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{LogLevel: "info", ReadOnly: true},
+		Toolsets:     []toolset.Toolset{newHigressToolset(t, true)},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer server.Close()
+
+	requireRegisteredTools(t, server.GetEnabledTools(), []string{
+		"higress_console_capabilities",
+		"higress_console_openapi",
+		"higress_list_resource",
+		"higress_get_resource",
+	})
+}
+
+func TestNewServerReadOnlyHigressToolsCannotBeRestoredByEnabledTools(t *testing.T) {
+	server, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{
+			LogLevel: "info",
+			ReadOnly: true,
+			EnabledTools: []string{
+				"higress_list_resource",
+				"higress_console_request",
+				"higress_create_resource",
+				"higress_update_resource",
+				"higress_delete_resource",
+				"higress_manage_plugin_instance",
+			},
+		},
+		Toolsets: []toolset.Toolset{newHigressToolset(t, true)},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer server.Close()
+
+	requireRegisteredTools(t, server.GetEnabledTools(), []string{"higress_list_resource"})
+}
+
+func TestNewServerRegistersAllHigressToolsWhenReadOnlyDisabled(t *testing.T) {
+	server, err := mcpserver.NewServer(mcpserver.Configuration{
+		StaticConfig: &config.StaticConfig{LogLevel: "info", ReadOnly: false},
+		Toolsets:     []toolset.Toolset{newHigressToolset(t, false)},
+	})
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	defer server.Close()
+
+	requireRegisteredTools(t, server.GetEnabledTools(), []string{
+		"higress_console_capabilities",
+		"higress_console_openapi",
+		"higress_console_request",
+		"higress_list_resource",
+		"higress_get_resource",
+		"higress_create_resource",
+		"higress_update_resource",
+		"higress_delete_resource",
+		"higress_manage_plugin_instance",
+	})
 }
 
 func TestNewServerRequiresStaticConfig(t *testing.T) {
@@ -139,5 +206,34 @@ func rawSchemaTool(schema string) toolset.ServerTool {
 			return "", nil
 		},
 		Domain: "test",
+	}
+}
+
+func newHigressToolset(t *testing.T, readOnly bool) *higress.Toolset {
+	t.Helper()
+	client, err := console.NewClient(console.Config{BaseURL: "https://console.example", TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, readOnly)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return set
+}
+
+func requireRegisteredTools(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("registered tools = %#v, want %#v", got, want)
+	}
+	seen := make(map[string]bool, len(got))
+	for _, name := range got {
+		seen[name] = true
+	}
+	for _, name := range want {
+		if !seen[name] {
+			t.Fatalf("registered tools = %#v, missing %q", got, name)
+		}
 	}
 }

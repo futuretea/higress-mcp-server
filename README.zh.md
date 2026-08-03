@@ -12,9 +12,9 @@ MCP 的 HTTP 入口按需求不做内建认证；仅应部署在可信网络中�
 服务提供常用资源的易用工具：路由、域名、服务来源、消费者、代理服务器、TLS
 证书、Wasm 插件与其全局/路由/域名/服务实例，以及 AI 路由和 LLM Provider。
 
-`higress_console_request` 是完整 API 的通用入口，可访问配置的 Console 上所有
-管理路径，包括 system、dashboard、user、MCP Server、AI Proxy 与 Grafana。它拒绝
-带主机、查询串或路径穿越的输入，也会拒绝离开已配置 Console base URL（含路径前缀）的
+`higress_console_request` 是完整 API 的通用入口，仅在 `read_only=false` 时可用，
+可访问配置的 Console 上所有管理路径，包括 system、dashboard、user、MCP Server、AI
+Proxy 与 Grafana。它拒绝带主机、查询串或路径穿越的输入，也会拒绝离开已配置 Console base URL（含路径前缀）的
 重定向，因此不能被用作转发到其他主机或应用的代理。可先调用
 `higress_console_capabilities` 查看常用资源名称和稳定 API 分组。
 
@@ -62,8 +62,16 @@ Console 地址发送 HTTP Basic 认证。仅当目标 Console 明确允许匿名
 | Console 密码 | — | `MCP_HIGRESS_CONSOLE_PASSWORD` | 未设置 |
 | MCP HTTP 端口 | `mcp --port` | `MCP_PORT` | `0`（stdio） |
 | MCP 监听地址 | `mcp --listen` | `MCP_LISTEN` | `127.0.0.1` |
+| 只读工具目录 | `--read-only` | `MCP_READ_ONLY` | `true` |
 
 非敏感的 YAML 配置见 [config.example.yaml](config.example.yaml)。
+
+服务默认只读，仅暴露 `higress_console_capabilities`、
+`higress_console_openapi`、`higress_list_resource` 和
+`higress_get_resource`；`enabled_tools` 不能恢复被排除的写能力工具。需要管理
+Console 资源时，显式设置 `read_only: false`、`MCP_READ_ONLY=false` 或
+`--read-only=false`，然后重启服务。该目录策略不为公开 MCP HTTP 端点新增认证或
+授权；公开部署应放在已认证的反向代理之后。
 
 ## MCP 工具
 
@@ -71,16 +79,16 @@ Console 地址发送 HTTP Basic 认证。仅当目标 Console 明确允许匿名
 | --- | --- |
 | `higress_console_capabilities` | 列出常用资源与 API Controller 分组。 |
 | `higress_console_openapi` | 获取可选的 Console API Docs。 |
-| `higress_console_request` | 调用已配置 Console 上的任意 API 路径。 |
+| `higress_console_request` | 调用已配置 Console 上的任意 API 路径；仅在 `read_only=false` 时可用。 |
 | `higress_list_resource` / `higress_get_resource` | 读取常用具名资源。 |
-| `higress_create_resource` / `higress_update_resource` / `higress_delete_resource` | 修改常用具名资源。 |
-| `higress_manage_plugin_instance` | 管理全局、路由、域名和服务级 Wasm 实例。 |
+| `higress_create_resource` / `higress_update_resource` / `higress_delete_resource` | 修改常用具名资源；仅在 `read_only=false` 时可用。 |
+| `higress_manage_plugin_instance` | 管理全局、路由、域名和服务级 Wasm 实例；仅在 `read_only=false` 时可用。 |
 
 命令行可用于查看工具 Schema 或做脚本调用：
 
 ```bash
 ./bin/higress-mcp-server tools list
-./bin/higress-mcp-server tools describe higress_create_resource --json
+./bin/higress-mcp-server --read-only=false tools describe higress_create_resource --json
 ./bin/higress-mcp-server tools call higress_list_resource \
   --params '{"resource":"routes"}'
 ```

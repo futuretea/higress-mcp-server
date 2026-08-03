@@ -102,7 +102,7 @@ func startMCPServer(t *testing.T, ctx context.Context, binary, consoleURL, usern
 	t.Helper()
 	port := reservePort(t)
 	processCtx, cancel := context.WithCancel(context.Background())
-	command := exec.CommandContext(processCtx, binary, "mcp", "--port", strconv.Itoa(port), "--listen", "127.0.0.1", "--console-url", consoleURL)
+	command := exec.CommandContext(processCtx, binary, "mcp", "--read-only=false", "--port", strconv.Itoa(port), "--listen", "127.0.0.1", "--console-url", consoleURL)
 	output := &bytes.Buffer{}
 	command.Stdout = output
 	command.Stderr = output

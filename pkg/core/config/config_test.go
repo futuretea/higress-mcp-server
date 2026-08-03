@@ -1,9 +1,12 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/futuretea/higress-mcp-server/pkg/core/config"
@@ -25,6 +28,49 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.ConsoleURL != "http://127.0.0.1:8080" {
 		t.Fatalf("expected default console_url, got %q", cfg.ConsoleURL)
+	}
+	if !cfg.ReadOnly {
+		t.Fatal("expected read_only to default to true")
+	}
+}
+
+func TestLoadConfigReadOnlyFalseOverrides(t *testing.T) {
+	t.Run("YAML", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(configPath, []byte("read_only: false\n"), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		assertReadOnly(t, configPath, viper.New(), false)
+	})
+
+	t.Run("environment", func(t *testing.T) {
+		t.Setenv("MCP_READ_ONLY", "false")
+		assertReadOnly(t, "", viper.New(), false)
+	})
+
+	t.Run("flag", func(t *testing.T) {
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		flags.Bool("read-only", true, "")
+		if err := flags.Parse([]string{"--read-only=false"}); err != nil {
+			t.Fatalf("parse flag: %v", err)
+		}
+
+		v := viper.New()
+		if err := v.BindPFlag("read_only", flags.Lookup("read-only")); err != nil {
+			t.Fatalf("bind flag: %v", err)
+		}
+		assertReadOnly(t, "", v, false)
+	})
+}
+
+func assertReadOnly(t *testing.T, configPath string, v *viper.Viper, want bool) {
+	t.Helper()
+	cfg, err := config.LoadConfig(configPath, v)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ReadOnly != want {
+		t.Fatalf("ReadOnly = %t, want %t", cfg.ReadOnly, want)
 	}
 }
 
