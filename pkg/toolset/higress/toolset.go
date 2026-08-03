@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"github.com/mark3labs/mcp-go/mcp"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/futuretea/higress-mcp-server/pkg/console"
 	"github.com/futuretea/higress-mcp-server/pkg/toolset"
@@ -212,40 +210,29 @@ func (t *Toolset) namedCall(ctx context.Context, params map[string]any, operatio
 
 func (t *Toolset) call(ctx context.Context, request console.Request, showSensitiveData bool) (string, error) {
 	response, err := t.client.Request(ctx, request)
-	maskConsumerCredentials := isConsumerReadRequest(request) && !showSensitiveData
-	if maskConsumerCredentials {
-		response = redactConsumerKeyAuthCredentials(response)
+	redacted := false
+	if !showSensitiveData && response.StatusCode != 0 {
+		var redactionErr error
+		response, redacted, redactionErr = redactSensitiveResponse(request, response)
+		if redactionErr != nil {
+			return "", redactionErr
+		}
 	}
 	if err != nil {
-		if maskConsumerCredentials && response.StatusCode != 0 {
-			return "", redactedConsumerReadError(response)
+		if redacted {
+			return "", redactedConsoleResponseError(response)
 		}
 		return "", err
 	}
 	return formatResponse(response), nil
 }
 
-func isConsumerReadRequest(request console.Request) bool {
-	if !strings.EqualFold(strings.TrimSpace(request.Method), http.MethodGet) {
-		return false
-	}
-	parsed, err := url.Parse(request.Path)
-	if err != nil {
-		return false
-	}
-	if parsed.Path == "/v1/consumers" {
-		return true
-	}
-	name := strings.TrimPrefix(parsed.Path, "/v1/consumers/")
-	return name != parsed.Path && name != "" && !strings.Contains(name, "/")
-}
-
 var (
 	emptySchema          = json.RawMessage(`{"type":"object","additionalProperties":false}`)
 	capabilitiesSchema   = emptySchema
-	requestSchema        = json.RawMessage(`{"type":"object","properties":{"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"]},"path":{"type":"string","description":"Absolute Console API path, for example /v1/routes. It cannot contain a host or query string."},"query":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"object","additionalProperties":true},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values for Consumer GET requests. Default false masks them with ***."}},"required":["method","path"],"additionalProperties":false}`)
-	listSchema           = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"query":{"type":"object","additionalProperties":{"type":"string"}},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values when resource is consumers. Default false masks them with ***."}},"required":["resource"],"additionalProperties":false}`)
-	namedResourceSchema  = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values when resource is consumers. Default false masks them with ***."}},"required":["resource","name"],"additionalProperties":false}`)
+	requestSchema        = json.RawMessage(`{"type":"object","properties":{"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"]},"path":{"type":"string","description":"Absolute Console API path, for example /v1/routes. It cannot contain a host or query string."},"query":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"object","additionalProperties":true},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show approved sensitive fields in matching Console responses. Default false masks credential values, TLS keys, provider tokens, database passwords, and user passwords with ***."}},"required":["method","path"],"additionalProperties":false}`)
+	listSchema           = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"query":{"type":"object","additionalProperties":{"type":"string"}},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show sensitive fields in Consumer, TLS certificate, and LLM provider responses. Default false masks them with ***."}},"required":["resource"],"additionalProperties":false}`)
+	namedResourceSchema  = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show sensitive fields in Consumer, TLS certificate, and LLM provider responses. Default false masks them with ***."}},"required":["resource","name"],"additionalProperties":false}`)
 	createSchema         = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"body":{"type":"object","additionalProperties":true}},"required":["resource","body"],"additionalProperties":false}`)
 	namedBodySchema      = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"},"body":{"type":"object","additionalProperties":true}},"required":["resource","name","body"],"additionalProperties":false}`)
 	pluginInstanceSchema = json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["list","get","upsert","delete"]},"scope":{"type":"string","enum":["global","routes","domains","services"]},"target":{"type":"string","description":"Required for routes, domains, and services scopes."},"plugin_name":{"type":"string","description":"Required except for list."},"body":{"type":"object","description":"Required for upsert.","additionalProperties":true}},"required":["operation","scope"],"additionalProperties":false}`)

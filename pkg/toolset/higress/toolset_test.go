@@ -311,7 +311,7 @@ func TestConsumerReadToolsAdvertiseSensitiveDataOption(t *testing.T) {
 	}
 }
 
-func TestGenericConsumerWriteDoesNotRedactResponse(t *testing.T) {
+func TestGenericConsumerWriteDoesNotExposeCredentialsUnlessExplicitlyRequested(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/consumers" {
 			t.Fatalf("request = %s %s, want POST /v1/consumers", r.Method, r.URL.Path)
@@ -328,14 +328,32 @@ func TestGenericConsumerWriteDoesNotRedactResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	response, err := handlersByName(set.GetTools())["higress_console_request"](context.Background(), map[string]any{
-		"method": "POST", "path": "/v1/consumers", "body": map[string]any{"name": "created-consumer"},
-	})
-	if err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-	if !strings.Contains(response, "created-secret") {
-		t.Fatalf("response = %s, want unmodified write response", response)
+	handler := handlersByName(set.GetTools())["higress_console_request"]
+	for _, test := range []struct {
+		name              string
+		showSensitiveData bool
+		wantSensitiveData bool
+	}{
+		{name: "default", wantSensitiveData: false},
+		{name: "explicit reveal", showSensitiveData: true, wantSensitiveData: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params := map[string]any{
+				"method": "POST",
+				"path":   "/v1/consumers",
+				"body":   map[string]any{"name": "created-consumer"},
+			}
+			if test.showSensitiveData {
+				params["show_sensitive_data"] = true
+			}
+			response, err := handler(context.Background(), params)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			if strings.Contains(response, "created-secret") != test.wantSensitiveData {
+				t.Fatalf("response contains sensitive value unexpectedly: %s", response)
+			}
+		})
 	}
 }
 
