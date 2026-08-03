@@ -38,7 +38,7 @@ func (t *Toolset) managePluginInstance(ctx context.Context, params map[string]an
 			return "", err
 		}
 	}
-	return t.call(ctx, console.Request{Method: method, Path: path, Body: body})
+	return t.call(ctx, console.Request{Method: method, Path: path, Body: body}, false)
 }
 
 func pluginInstancePath(scope, operation, target, pluginName string) (string, error) {

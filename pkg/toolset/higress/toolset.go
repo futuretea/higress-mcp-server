@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"github.com/mark3labs/mcp-go/mcp"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/futuretea/higress-mcp-server/pkg/console"
 	"github.com/futuretea/higress-mcp-server/pkg/toolset"
@@ -113,7 +115,7 @@ var writeCapableToolNames = map[string]struct{}{
 }
 
 func (t *Toolset) openapi(ctx context.Context, _ map[string]any) (string, error) {
-	return t.call(ctx, console.Request{Method: http.MethodGet, Path: "/v3/api-docs/Higress"})
+	return t.call(ctx, console.Request{Method: http.MethodGet, Path: "/v3/api-docs/Higress"}, false)
 }
 
 func (t *Toolset) request(ctx context.Context, params map[string]any) (string, error) {
@@ -129,7 +131,11 @@ func (t *Toolset) request(ctx context.Context, params map[string]any) (string, e
 	if err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}
-	return t.call(ctx, console.Request{Method: method, Path: path, Query: query, Body: params["body"]})
+	showSensitiveData, err := optionalBool(params, "show_sensitive_data")
+	if err != nil {
+		return "", err
+	}
+	return t.call(ctx, console.Request{Method: method, Path: path, Query: query, Body: params["body"]}, showSensitiveData)
 }
 
 func (t *Toolset) listResource(ctx context.Context, params map[string]any) (string, error) {
@@ -145,11 +151,19 @@ func (t *Toolset) listResource(ctx context.Context, params map[string]any) (stri
 	if err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}
-	return t.call(ctx, console.Request{Method: http.MethodGet, Path: path, Query: query})
+	showSensitiveData, err := optionalBool(params, "show_sensitive_data")
+	if err != nil {
+		return "", err
+	}
+	return t.call(ctx, console.Request{Method: http.MethodGet, Path: path, Query: query}, showSensitiveData)
 }
 
 func (t *Toolset) getResource(ctx context.Context, params map[string]any) (string, error) {
-	return t.namedCall(ctx, params, "get", http.MethodGet, nil)
+	showSensitiveData, err := optionalBool(params, "show_sensitive_data")
+	if err != nil {
+		return "", err
+	}
+	return t.namedCall(ctx, params, "get", http.MethodGet, nil, showSensitiveData)
 }
 
 func (t *Toolset) createResource(ctx context.Context, params map[string]any) (string, error) {
@@ -165,7 +179,7 @@ func (t *Toolset) createResource(ctx context.Context, params map[string]any) (st
 	if err != nil {
 		return "", err
 	}
-	return t.call(ctx, console.Request{Method: http.MethodPost, Path: path, Body: body})
+	return t.call(ctx, console.Request{Method: http.MethodPost, Path: path, Body: body}, false)
 }
 
 func (t *Toolset) updateResource(ctx context.Context, params map[string]any) (string, error) {
@@ -173,14 +187,14 @@ func (t *Toolset) updateResource(ctx context.Context, params map[string]any) (st
 	if err != nil {
 		return "", err
 	}
-	return t.namedCall(ctx, params, "update", http.MethodPut, body)
+	return t.namedCall(ctx, params, "update", http.MethodPut, body, false)
 }
 
 func (t *Toolset) deleteResource(ctx context.Context, params map[string]any) (string, error) {
-	return t.namedCall(ctx, params, "delete", http.MethodDelete, nil)
+	return t.namedCall(ctx, params, "delete", http.MethodDelete, nil, false)
 }
 
-func (t *Toolset) namedCall(ctx context.Context, params map[string]any, operation, method string, body any) (string, error) {
+func (t *Toolset) namedCall(ctx context.Context, params map[string]any, operation, method string, body any, showSensitiveData bool) (string, error) {
 	resource, err := requiredString(params, "resource")
 	if err != nil {
 		return "", err
@@ -193,23 +207,45 @@ func (t *Toolset) namedCall(ctx context.Context, params map[string]any, operatio
 	if err != nil {
 		return "", err
 	}
-	return t.call(ctx, console.Request{Method: method, Path: path, Body: body})
+	return t.call(ctx, console.Request{Method: method, Path: path, Body: body}, showSensitiveData)
 }
 
-func (t *Toolset) call(ctx context.Context, request console.Request) (string, error) {
+func (t *Toolset) call(ctx context.Context, request console.Request, showSensitiveData bool) (string, error) {
 	response, err := t.client.Request(ctx, request)
+	maskConsumerCredentials := isConsumerReadRequest(request) && !showSensitiveData
+	if maskConsumerCredentials {
+		response = redactConsumerKeyAuthCredentials(response)
+	}
 	if err != nil {
+		if maskConsumerCredentials && response.StatusCode != 0 {
+			return "", redactedConsumerReadError(response)
+		}
 		return "", err
 	}
 	return formatResponse(response), nil
 }
 
+func isConsumerReadRequest(request console.Request) bool {
+	if !strings.EqualFold(strings.TrimSpace(request.Method), http.MethodGet) {
+		return false
+	}
+	parsed, err := url.Parse(request.Path)
+	if err != nil {
+		return false
+	}
+	if parsed.Path == "/v1/consumers" {
+		return true
+	}
+	name := strings.TrimPrefix(parsed.Path, "/v1/consumers/")
+	return name != parsed.Path && name != "" && !strings.Contains(name, "/")
+}
+
 var (
 	emptySchema          = json.RawMessage(`{"type":"object","additionalProperties":false}`)
 	capabilitiesSchema   = emptySchema
-	requestSchema        = json.RawMessage(`{"type":"object","properties":{"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"]},"path":{"type":"string","description":"Absolute Console API path, for example /v1/routes. It cannot contain a host or query string."},"query":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"object","additionalProperties":true}},"required":["method","path"],"additionalProperties":false}`)
-	listSchema           = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"query":{"type":"object","additionalProperties":{"type":"string"}}},"required":["resource"],"additionalProperties":false}`)
-	namedResourceSchema  = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"}},"required":["resource","name"],"additionalProperties":false}`)
+	requestSchema        = json.RawMessage(`{"type":"object","properties":{"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"]},"path":{"type":"string","description":"Absolute Console API path, for example /v1/routes. It cannot contain a host or query string."},"query":{"type":"object","additionalProperties":{"type":"string"}},"body":{"type":"object","additionalProperties":true},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values for Consumer GET requests. Default false masks them with ***."}},"required":["method","path"],"additionalProperties":false}`)
+	listSchema           = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"query":{"type":"object","additionalProperties":{"type":"string"}},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values when resource is consumers. Default false masks them with ***."}},"required":["resource"],"additionalProperties":false}`)
+	namedResourceSchema  = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"},"show_sensitive_data":{"type":"boolean","default":false,"description":"Show key-auth credential values when resource is consumers. Default false masks them with ***."}},"required":["resource","name"],"additionalProperties":false}`)
 	createSchema         = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"body":{"type":"object","additionalProperties":true}},"required":["resource","body"],"additionalProperties":false}`)
 	namedBodySchema      = json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string","enum":["ai_routes","consumers","domains","llm_providers","proxy_servers","routes","service_sources","tls_certificates","wasm_plugins"]},"name":{"type":"string"},"body":{"type":"object","additionalProperties":true}},"required":["resource","name","body"],"additionalProperties":false}`)
 	pluginInstanceSchema = json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["list","get","upsert","delete"]},"scope":{"type":"string","enum":["global","routes","domains","services"]},"target":{"type":"string","description":"Required for routes, domains, and services scopes."},"plugin_name":{"type":"string","description":"Required except for list."},"body":{"type":"object","description":"Required for upsert.","additionalProperties":true}},"required":["operation","scope"],"additionalProperties":false}`)

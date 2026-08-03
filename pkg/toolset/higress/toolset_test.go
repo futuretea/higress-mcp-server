@@ -3,6 +3,7 @@ package higress_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -119,6 +120,225 @@ func TestGenericToolRejectsExternalPath(t *testing.T) {
 	}
 }
 
+func TestConsumerReadCredentialsAreMaskedUnlessExplicitlyRequested(t *testing.T) {
+	handlers := newConsumerTestHandlers(t)
+	tests := []consumerReadTest{
+		{
+			name: "specialized list", tool: "higress_list_resource",
+			params: map[string]any{"resource": "consumers"}, secret: "list-secret", preserved: "jwt-secret", preservedNumber: "9007199254740993",
+		},
+		{
+			name: "specialized get", tool: "higress_get_resource",
+			params: map[string]any{"resource": "consumers", "name": "named-consumer"}, secret: "named-secret",
+		},
+		{
+			name: "generic list", tool: "higress_console_request",
+			params: map[string]any{"method": "GET", "path": "/v1/consumers"}, secret: "list-secret", preserved: "jwt-secret", preservedNumber: "9007199254740993",
+		},
+		{
+			name: "encoded generic list", tool: "higress_console_request",
+			params: map[string]any{"method": "GET", "path": "/v1%2fconsumers"}, secret: "list-secret", preserved: "jwt-secret", preservedNumber: "9007199254740993",
+		},
+		{
+			name: "generic get", tool: "higress_console_request",
+			params: map[string]any{"method": "GET", "path": "/v1/consumers/named-consumer"}, secret: "named-secret",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertConsumerReadResponse(t, handlers, test, false)
+		})
+	}
+}
+
+func TestConsumerReadCredentialsCanBeExplicitlyRequested(t *testing.T) {
+	handlers := newConsumerTestHandlers(t)
+	tests := []consumerReadTest{
+		{
+			name: "specialized list", tool: "higress_list_resource",
+			params: map[string]any{"resource": "consumers"}, secret: "list-secret", preserved: "jwt-secret", preservedNumber: "9007199254740993",
+		},
+		{
+			name: "specialized get", tool: "higress_get_resource",
+			params: map[string]any{"resource": "consumers", "name": "named-consumer"}, secret: "named-secret",
+		},
+		{
+			name: "generic get", tool: "higress_console_request",
+			params: map[string]any{"method": "GET", "path": "/v1/consumers/named-consumer"}, secret: "named-secret",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertConsumerReadResponse(t, handlers, test, true)
+		})
+	}
+}
+
+func TestConsumerReadErrorsAreMaskedUnlessExplicitlyRequested(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"data":{"credentials":[{"type":"key-auth","values":["error-secret"]}]}}`))
+	}))
+	defer server.Close()
+
+	client, err := console.NewClient(console.Config{BaseURL: server.URL, TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	handler := handlersByName(set.GetTools())["higress_console_request"]
+
+	for _, showSensitiveData := range []bool{false, true} {
+		t.Run(fmt.Sprintf("show sensitive data %t", showSensitiveData), func(t *testing.T) {
+			_, err := handler(context.Background(), map[string]any{
+				"method": "GET", "path": "/v1/consumers", "show_sensitive_data": showSensitiveData,
+			})
+			if err == nil {
+				t.Fatal("handler error = nil, want Console error")
+			}
+			if strings.Contains(err.Error(), "error-secret") != showSensitiveData {
+				t.Fatalf("error contains sensitive value unexpectedly")
+			}
+			if !showSensitiveData && !strings.Contains(err.Error(), "***") {
+				t.Fatalf("error does not contain masked value")
+			}
+		})
+	}
+}
+
+type consumerReadTest struct {
+	name            string
+	tool            string
+	params          map[string]any
+	secret          string
+	preserved       string
+	preservedNumber string
+}
+
+func newConsumerTestHandlers(t *testing.T) map[string]toolset.ToolHandler {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		switch r.URL.Path {
+		case "/v1/consumers":
+			_, _ = w.Write([]byte(`{"total":9007199254740993,"data":[{"name":"list-consumer","credentials":[{"type":"key-auth","key":"x-api-key","values":["list-secret","list-secret-2"]},{"type":"jwt","values":["jwt-secret"]}]}]}`))
+		case "/v1/consumers/named-consumer":
+			_, _ = w.Write([]byte(`{"data":{"name":"named-consumer","credentials":[{"type":"key-auth","key":"x-api-key","values":["named-secret"]}]}}`))
+		default:
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := console.NewClient(console.Config{BaseURL: server.URL, TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return handlersByName(set.GetTools())
+}
+
+func assertConsumerReadResponse(t *testing.T, handlers map[string]toolset.ToolHandler, test consumerReadTest, showSensitiveData bool) {
+	t.Helper()
+	params := make(map[string]any, len(test.params)+1)
+	for key, value := range test.params {
+		params[key] = value
+	}
+	params["show_sensitive_data"] = showSensitiveData
+
+	response, err := handlers[test.tool](context.Background(), params)
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if strings.Contains(response, test.secret) != showSensitiveData {
+		t.Fatalf("response contains sensitive value unexpectedly")
+	}
+	if !showSensitiveData && !strings.Contains(response, "***") {
+		t.Fatalf("response does not contain masked values")
+	}
+	if test.preserved != "" && !strings.Contains(response, test.preserved) {
+		t.Fatalf("response does not preserve %q", test.preserved)
+	}
+	if test.preservedNumber != "" && !strings.Contains(response, test.preservedNumber) {
+		t.Fatalf("response does not preserve numeric value %q", test.preservedNumber)
+	}
+}
+
+func TestConsumerReadToolsAdvertiseSensitiveDataOption(t *testing.T) {
+	client, err := console.NewClient(console.Config{BaseURL: "https://console.example", TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	tools := set.GetTools()
+	for _, name := range []string{"higress_console_request", "higress_list_resource", "higress_get_resource"} {
+		tool, ok := findTool(tools, name)
+		if !ok {
+			t.Fatalf("tool %q is missing", name)
+		}
+		var definition map[string]any
+		encoded, err := json.Marshal(tool.Tool)
+		if err != nil {
+			t.Fatalf("marshal tool %q: %v", name, err)
+		}
+		if err := json.Unmarshal(encoded, &definition); err != nil {
+			t.Fatalf("unmarshal tool %q: %v", name, err)
+		}
+		inputSchema, ok := definition["inputSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool %q input schema = %#v", name, definition["inputSchema"])
+		}
+		properties, ok := inputSchema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("tool %q properties = %#v", name, inputSchema["properties"])
+		}
+		option, ok := properties["show_sensitive_data"].(map[string]any)
+		if !ok || option["type"] != "boolean" || option["default"] != false {
+			t.Fatalf("tool %q show_sensitive_data = %#v", name, properties["show_sensitive_data"])
+		}
+	}
+}
+
+func TestGenericConsumerWriteDoesNotRedactResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/consumers" {
+			t.Fatalf("request = %s %s, want POST /v1/consumers", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":{"credentials":[{"type":"key-auth","values":["created-secret"]}]}}`))
+	}))
+	defer server.Close()
+
+	client, err := console.NewClient(console.Config{BaseURL: server.URL, TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	set, err := higress.New(client, false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	response, err := handlersByName(set.GetTools())["higress_console_request"](context.Background(), map[string]any{
+		"method": "POST", "path": "/v1/consumers", "body": map[string]any{"name": "created-consumer"},
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !strings.Contains(response, "created-secret") {
+		t.Fatalf("response = %s, want unmodified write response", response)
+	}
+}
+
 func TestPluginInstanceToolRejectsEncodedPathDelimiters(t *testing.T) {
 	client, err := console.NewClient(console.Config{BaseURL: "https://console.example", TimeoutSeconds: 5})
 	if err != nil {
@@ -146,6 +366,15 @@ func handlersByName(tools []toolset.ServerTool) map[string]toolset.ToolHandler {
 		handlers[tool.Tool.Name] = tool.Handler
 	}
 	return handlers
+}
+
+func findTool(tools []toolset.ServerTool, name string) (toolset.ServerTool, bool) {
+	for _, tool := range tools {
+		if tool.Tool.Name == name {
+			return tool, true
+		}
+	}
+	return toolset.ServerTool{}, false
 }
 
 var readOnlyToolNames = []string{
