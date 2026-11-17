@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +73,140 @@ func assertReadOnly(t *testing.T, configPath string, v *viper.Viper, want bool) 
 	if cfg.ReadOnly != want {
 		t.Fatalf("ReadOnly = %t, want %t", cfg.ReadOnly, want)
 	}
+}
+
+func TestLoadConfigRejectsBlankOnlyNameLists(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "enabled tools",
+			yaml: "enabled_tools:\n  - \" \"\n  - \"\"\n",
+			want: "enabled_tools contains no names",
+		},
+		{
+			name: "disabled tools",
+			yaml: "disabled_tools:\n  - \" \"\n",
+			want: "disabled_tools contains no names",
+		},
+		{
+			name: "enabled domains",
+			yaml: "enabled_domains:\n  - \"\t\"\n",
+			want: "enabled_domains contains no names",
+		},
+		{
+			name: "disabled domains",
+			yaml: "disabled_domains:\n  - \" \"\n  - \"  \"\n",
+			want: "disabled_domains contains no names",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.LoadConfig(writeConfigFile(t, tt.yaml), viper.New())
+			if err == nil || err.Error() != tt.want {
+				t.Fatalf("LoadConfig error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	t.Run("blank environment overrides allow list", func(t *testing.T) {
+		t.Setenv("MCP_ENABLED_TOOLS", " , ")
+		_, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - higress_list_resource\n"), viper.New())
+		if err == nil || err.Error() != "enabled_tools contains no names" {
+			t.Fatalf("LoadConfig error = %v, want blank enabled_tools error", err)
+		}
+	})
+
+	t.Run("blank flag overrides allow list", func(t *testing.T) {
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		flags.StringSlice("enabled-tools", []string{}, "")
+		if err := flags.Parse([]string{"--enabled-tools", " , "}); err != nil {
+			t.Fatalf("parse flag: %v", err)
+		}
+		v := viper.New()
+		if err := v.BindPFlag("enabled_tools", flags.Lookup("enabled-tools")); err != nil {
+			t.Fatalf("bind flag: %v", err)
+		}
+		_, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - higress_list_resource\n"), v)
+		if err == nil || err.Error() != "enabled_tools contains no names" {
+			t.Fatalf("LoadConfig error = %v, want blank enabled_tools error", err)
+		}
+	})
+}
+
+func TestLoadConfigKeepsEmptyMixedAndEmptyEnvironmentNameLists(t *testing.T) {
+	t.Run("empty list", func(t *testing.T) {
+		cfg, err := config.LoadConfig(writeConfigFile(t, "enabled_tools: []\n"), viper.New())
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		if len(cfg.EnabledTools) != 0 {
+			t.Fatalf("EnabledTools = %#v, want empty", cfg.EnabledTools)
+		}
+	})
+
+	t.Run("mixed blanks and names", func(t *testing.T) {
+		cfg, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - \" \"\n  - higress_get_resource\n  - \"\"\n  - higress_list_resource\n"), viper.New())
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		want := []string{"higress_get_resource", "higress_list_resource"}
+		if !slices.Equal(cfg.EnabledTools, want) {
+			t.Fatalf("EnabledTools = %#v, want %#v", cfg.EnabledTools, want)
+		}
+	})
+
+	t.Run("unknown name stays", func(t *testing.T) {
+		cfg, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - not-a-real-tool\n"), viper.New())
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		if !slices.Equal(cfg.EnabledTools, []string{"not-a-real-tool"}) {
+			t.Fatalf("EnabledTools = %#v", cfg.EnabledTools)
+		}
+	})
+
+	t.Run("empty environment keeps YAML allow list", func(t *testing.T) {
+		t.Setenv("MCP_ENABLED_TOOLS", "")
+		cfg, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - higress_list_resource\n"), viper.New())
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		if !slices.Equal(cfg.EnabledTools, []string{"higress_list_resource"}) {
+			t.Fatalf("EnabledTools = %#v, want YAML allow list", cfg.EnabledTools)
+		}
+	})
+
+	t.Run("unset flag keeps YAML allow list", func(t *testing.T) {
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		flags.StringSlice("enabled-tools", []string{}, "")
+		if err := flags.Parse([]string{}); err != nil {
+			t.Fatalf("parse flag: %v", err)
+		}
+		v := viper.New()
+		if err := v.BindPFlag("enabled_tools", flags.Lookup("enabled-tools")); err != nil {
+			t.Fatalf("bind flag: %v", err)
+		}
+		cfg, err := config.LoadConfig(writeConfigFile(t, "enabled_tools:\n  - higress_list_resource\n"), v)
+		if err != nil {
+			t.Fatalf("LoadConfig: %v", err)
+		}
+		if !slices.Equal(cfg.EnabledTools, []string{"higress_list_resource"}) {
+			t.Fatalf("EnabledTools = %#v, want YAML allow list", cfg.EnabledTools)
+		}
+	})
+}
+
+func writeConfigFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return path
 }
 
 func TestLoadConfigUsesHigressConsoleEnvironmentVariables(t *testing.T) {
