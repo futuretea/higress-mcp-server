@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -135,6 +137,65 @@ func TestToolsUnknownTool(t *testing.T) {
 	err = root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("expected unknown tool error on call, got %v", err)
+	}
+}
+
+func TestToolsListRejectsBlankNameLists(t *testing.T) {
+	allowPath := filepath.Join(t.TempDir(), "allow.yaml")
+	if err := os.WriteFile(allowPath, []byte("read_only: false\nenabled_tools:\n  - higress_list_resource\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	domainPath := filepath.Join(t.TempDir(), "domain.yaml")
+	if err := os.WriteFile(domainPath, []byte("disabled_domains:\n  - higress\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Run("environment", func(t *testing.T) {
+		t.Setenv("MCP_ENABLED_TOOLS", " , ")
+		assertCLIConfigError(t, []string{"--config", allowPath, "tools", "list", "--json"}, "load config: enabled_tools contains no names")
+	})
+	t.Run("flag", func(t *testing.T) {
+		assertCLIConfigError(t, []string{"--config", allowPath, "--enabled-tools", " , ", "tools", "list", "--json"}, "load config: enabled_tools contains no names")
+	})
+	t.Run("disabled domain environment", func(t *testing.T) {
+		t.Setenv("MCP_DISABLED_DOMAINS", " ")
+		assertCLIConfigError(t, []string{"--config", domainPath, "tools", "list", "--json"}, "load config: disabled_domains contains no names")
+	})
+}
+
+func TestEmptyEnabledToolsFlagOverridesAllowList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "allow.yaml")
+	if err := os.WriteFile(path, []byte("enabled_tools:\n  - higress_list_resource\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	requireCLIToolNames(t, []string{"--config", path, "--enabled-tools="}, []string{
+		"higress_console_capabilities",
+		"higress_console_openapi",
+		"higress_list_resource",
+		"higress_get_resource",
+	})
+}
+
+func TestEmptyEnabledToolsEnvKeepsAllowList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "allow.yaml")
+	if err := os.WriteFile(path, []byte("enabled_tools:\n  - higress_list_resource\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("MCP_ENABLED_TOOLS", "")
+	requireCLIToolNames(t, []string{"--config", path}, []string{"higress_list_resource"})
+}
+
+func assertCLIConfigError(t *testing.T, args []string, want string) {
+	t.Helper()
+	var out bytes.Buffer
+	root := cmd.NewRootCommand(cmd.IOStreams{Out: &out, ErrOut: &out})
+	root.SetArgs(args)
+	err := root.Execute()
+	if err == nil || err.Error() != want {
+		t.Fatalf("Execute() error = %v, want %q\n%s", err, want, out.String())
+	}
+	if strings.Contains(out.String(), "higress_") {
+		t.Fatalf("tools were listed before config failed:\n%s", out.String())
 	}
 }
 
