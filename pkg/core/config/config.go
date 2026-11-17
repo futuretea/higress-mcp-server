@@ -130,18 +130,30 @@ func LoadConfig(configPath string, v *viper.Viper) (*StaticConfig, error) {
 	cfg.ConsoleURL = strings.TrimRight(strings.TrimSpace(cfg.ConsoleURL), "/")
 	cfg.ConsoleUsername = strings.TrimSpace(cfg.ConsoleUsername)
 	cfg.ConsoleAuthMode = strings.ToLower(strings.TrimSpace(cfg.ConsoleAuthMode))
-	cfg.EnabledTools = normalizeStringSlice(cfg.EnabledTools)
-	cfg.DisabledTools = normalizeStringSlice(cfg.DisabledTools)
-	cfg.EnabledDomains = normalizeStringSlice(cfg.EnabledDomains)
-	cfg.DisabledDomains = normalizeStringSlice(cfg.DisabledDomains)
+	var err error
+	if cfg.EnabledTools, err = normalizeNameList("enabled_tools", cfg.EnabledTools); err != nil {
+		return nil, err
+	}
+	if cfg.DisabledTools, err = normalizeNameList("disabled_tools", cfg.DisabledTools); err != nil {
+		return nil, err
+	}
+	if cfg.EnabledDomains, err = normalizeNameList("enabled_domains", cfg.EnabledDomains); err != nil {
+		return nil, err
+	}
+	if cfg.DisabledDomains, err = normalizeNameList("disabled_domains", cfg.DisabledDomains); err != nil {
+		return nil, err
+	}
 
-	if err := cfg.Validate(); err != nil {
+	if err = cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func normalizeStringSlice(values []string) []string {
+func normalizeNameList(field string, values []string) ([]string, error) {
+	if len(values) == 0 {
+		return []string{}, nil
+	}
 	normalized := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -149,5 +161,8 @@ func normalizeStringSlice(values []string) []string {
 			normalized = append(normalized, value)
 		}
 	}
-	return normalized
+	if len(normalized) == 0 {
+		return nil, fmt.Errorf("%s contains no names", field)
+	}
+	return normalized, nil
 }
